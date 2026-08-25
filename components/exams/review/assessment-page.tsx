@@ -1,16 +1,32 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AssessmentHeader } from "./assessment-header";
+
+import type { UnmatchedAnswer } from "@/types/assessment";
+
 import { AnswerSheetViewer } from "./answer-sheet-viewer";
-import { QuestionDetail } from "./question-detial";
+import { AssessmentHeader } from "./assessment-header";
+import { AssessmentSummary } from "./assessment-summary";
+import {
+  assessmentQuestions,
+  unmatchedAnswers,
+} from "./mock-assessment";
+import { QuestionDetail } from "./question-detail";
 import { QuestionList } from "./question-list";
-import { assessmentQuestions } from "./mock-assessment";
+import { ReviewMobileTabs } from "./review-mobile-tabs";
+
+type ReviewTab = "questions" | "answer" | "sheet";
 
 export function AssessmentPage() {
   const [selectedId, setSelectedId] = useState(
     assessmentQuestions[0].id,
   );
+
+  const [selectedUnmatchedAnswer, setSelectedUnmatchedAnswer] =
+    useState<UnmatchedAnswer | null>(null);
+
+  const [mobileTab, setMobileTab] =
+    useState<ReviewTab>("questions");
 
   const selectedQuestion = useMemo(
     () =>
@@ -20,42 +36,170 @@ export function AssessmentPage() {
     [selectedId],
   );
 
-  const answered = assessmentQuestions.filter(
-    (question) => question.status === "answered",
-  ).length;
+  const summary = useMemo(() => {
+    const totalMarks = assessmentQuestions.reduce(
+      (total, question) => total + question.marks,
+      0,
+    );
 
-  const unanswered = assessmentQuestions.filter(
-    (question) => question.status === "unanswered",
-  ).length;
+    const obtainedMarks = assessmentQuestions.reduce(
+      (total, question) => total + question.score,
+      0,
+    );
 
-  const review = assessmentQuestions.filter(
-    (question) => question.status === "review",
-  ).length;
+    return {
+      totalMarks,
+      obtainedMarks,
+      answered: assessmentQuestions.filter(
+        (question) => question.status === "answered",
+      ).length,
+      unanswered: assessmentQuestions.filter(
+        (question) => question.status === "unanswered",
+      ).length,
+      needsReview: assessmentQuestions.filter(
+        (question) => question.status === "review",
+      ).length,
+      unmatched: unmatchedAnswers.length,
+    };
+  }, []);
+
+  function handleQuestionSelect(id: string) {
+    setSelectedId(id);
+    setSelectedUnmatchedAnswer(null);
+    setMobileTab("answer");
+  }
+
+  function handleUnmatchedSelect(answer: UnmatchedAnswer) {
+    setSelectedUnmatchedAnswer(answer);
+    setMobileTab("answer");
+  }
+
+  function handleMobileTabChange(tab: ReviewTab) {
+    setMobileTab(tab);
+  }
 
   return (
     <section className="h-[calc(100vh-64px)] overflow-hidden p-3 sm:p-5">
       <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[16px] bg-[#fffdf8] shadow-[0_3px_15px_rgba(70,60,40,0.05)]">
         <AssessmentHeader
           total={assessmentQuestions.length}
-          answered={answered}
-          unanswered={unanswered}
-          review={review}
+          answered={summary.answered}
+          unanswered={summary.unanswered}
+          review={summary.needsReview}
         />
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[280px_minmax(320px,1fr)_minmax(380px,1.15fr)]">
-          <QuestionList
-            questions={assessmentQuestions}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
+        <ReviewMobileTabs
+          activeTab={mobileTab}
+          onChange={handleMobileTabChange}
+        />
 
-          <QuestionDetail question={selectedQuestion} />
+        <div className="min-h-0 flex-1 lg:grid lg:grid-cols-[280px_minmax(320px,1fr)_minmax(380px,1.15fr)]">
+          {/* Questions */}
+          <div
+            className={[
+              "min-h-0 overflow-hidden",
+              mobileTab === "questions"
+                ? "block"
+                : "hidden",
+              "lg:block",
+            ].join(" ")}
+          >
+            <AssessmentSummary summary={summary} />
 
-          <AnswerSheetViewer
-            question={selectedQuestion}
-          />
+            <div className="h-[calc(100%-145px)] overflow-y-auto">
+              <QuestionList
+                questions={assessmentQuestions}
+                unmatchedAnswers={unmatchedAnswers}
+                selectedId={selectedId}
+                onSelect={handleQuestionSelect}
+                onSelectUnmatched={handleUnmatchedSelect}
+              />
+            </div>
+          </div>
+
+          {/* Question / Answer Detail */}
+          <div
+            className={[
+              "min-h-0 overflow-hidden",
+              mobileTab === "answer"
+                ? "block"
+                : "hidden",
+              "lg:block",
+            ].join(" ")}
+          >
+            {selectedUnmatchedAnswer ? (
+              <UnmatchedAnswerDetail
+                answer={selectedUnmatchedAnswer}
+              />
+            ) : (
+              <QuestionDetail
+                question={selectedQuestion}
+                showOverallFeedback={false}
+              />
+            )}
+          </div>
+
+          {/* Answer Sheet */}
+          <div
+            className={[
+              "min-h-0 overflow-hidden",
+              mobileTab === "sheet"
+                ? "block"
+                : "hidden",
+              "lg:block",
+            ].join(" ")}
+          >
+            <AnswerSheetViewer
+              question={selectedQuestion}
+              unmatchedAnswer={selectedUnmatchedAnswer}
+            />
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function UnmatchedAnswerDetail({
+  answer,
+}: {
+  answer: UnmatchedAnswer;
+}) {
+  return (
+    <div className="min-h-0 overflow-y-auto p-5 sm:p-7">
+      <span className="rounded-full bg-[#f8ddd4] px-3 py-1.5 text-[8px] font-semibold text-[#a45138]">
+        Unmatched Answer
+      </span>
+
+      <h2 className="mt-5 text-[16px] font-bold leading-6 text-[#34342f]">
+        Answer could not be mapped
+      </h2>
+
+      <p className="mt-2 text-[9px] leading-5 text-[#99968c]">
+        This response was detected on page{" "}
+        {answer.page}, but the system could not
+        confidently associate it with a question.
+      </p>
+
+      <div className="mt-6 rounded-[12px] bg-[#fff8f3] p-4">
+        <p className="text-[10px] leading-6 text-[#6f5f58]">
+          {answer.text}
+        </p>
+      </div>
+
+      <div className="mt-5 rounded-[12px] border border-[#eee5dc] p-4">
+        <p className="text-[8px] font-semibold text-[#99968c]">
+          Mapping confidence
+        </p>
+
+        <p className="mt-1 text-[18px] font-bold text-[#c85d3e]">
+          {Math.round(answer.confidence * 100)}%
+        </p>
+
+        <p className="mt-1 text-[8px] leading-4 text-[#aaa69d]">
+          A teacher should review this response manually.
+        </p>
+      </div>
+    </div>
   );
 }

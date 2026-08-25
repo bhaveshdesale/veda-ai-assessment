@@ -1,16 +1,27 @@
-import type { AssessmentQuestion } from "@/types/assessment";
+import type {
+  AssessmentQuestion,
+  UnmatchedAnswer,
+} from "@/types/assessment";
+
 import { QuestionItem } from "./question-item";
+import { UnmatchedAnswers } from "./unmatched-answers";
 
 type QuestionListProps = {
   questions: AssessmentQuestion[];
+  unmatchedAnswers: UnmatchedAnswer[];
   selectedId: string;
   onSelect: (id: string) => void;
+  onSelectUnmatched: (
+    answer: UnmatchedAnswer,
+  ) => void;
 };
 
 export function QuestionList({
   questions,
+  unmatchedAnswers,
   selectedId,
   onSelect,
+  onSelectUnmatched,
 }: QuestionListProps) {
   return (
     <aside className="min-h-0 overflow-y-auto border-b border-[#ebe7dd] p-3 lg:border-b-0 lg:border-r">
@@ -34,6 +45,11 @@ export function QuestionList({
           />
         ))}
       </div>
+
+      <UnmatchedAnswers
+        answers={unmatchedAnswers}
+        onSelect={onSelectUnmatched}
+      />
     </aside>
   );
 }

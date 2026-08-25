@@ -3,12 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen,
   ClipboardList,
   FileText,
   Grid2X2,
   Library,
-  Menu,
   Settings,
   Sparkles,
   UsersRound,

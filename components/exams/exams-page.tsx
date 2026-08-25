@@ -1,14 +1,59 @@
+// "use client";
+
+// import { useState } from "react";
+// import { UploadPage } from "./upload/upload-page";
+// import { ProcessingPage } from "./processing/processing-page";
+// import { AssessmentPage } from "./review/assessment-page";
+
+// type ExamStage = "upload" | "processing" | "review";
+
+// export function ExamsPage() {
+//   const [stage, setStage] = useState<ExamStage>("upload");
+
+//   function handleStartMapping() {
+//     setStage("processing");
+//   }
+
+//   function handleProcessingComplete() {
+//     setStage("review");
+//   }
+
+//   if (stage === "processing") {
+//     return (
+//       <ProcessingPage
+//         onComplete={handleProcessingComplete}
+//       />
+//     );
+//   }
+
+//   if (stage === "review") {
+//     return <AssessmentPage />;
+//   }
+
+//   return (
+//     <UploadPage
+//       onStartMapping={handleStartMapping}
+//     />
+//   );
+// }
+
+
 "use client";
 
 import { useState } from "react";
-import { UploadPage } from "./upload/upload-page";
+
 import { ProcessingPage } from "./processing/processing-page";
 import { AssessmentPage } from "./review/assessment-page";
+import { UploadPage } from "./upload/upload-page";
 
-type ExamStage = "upload" | "processing" | "review";
+type ExamStage =
+  | "upload"
+  | "processing"
+  | "review";
 
 export function ExamsPage() {
-  const [stage, setStage] = useState<ExamStage>("upload");
+  const [stage, setStage] =
+    useState<ExamStage>("upload");
 
   function handleStartMapping() {
     setStage("processing");
@@ -18,21 +63,25 @@ export function ExamsPage() {
     setStage("review");
   }
 
-  if (stage === "processing") {
-    return (
-      <ProcessingPage
-        onComplete={handleProcessingComplete}
-      />
-    );
-  }
+  switch (stage) {
+    case "processing":
+      return (
+        <ProcessingPage
+          onComplete={
+            handleProcessingComplete
+          }
+        />
+      );
 
-  if (stage === "review") {
-    return <AssessmentPage />;
-  }
+    case "review":
+      return <AssessmentPage />;
 
-  return (
-    <UploadPage
-      onStartMapping={handleStartMapping}
-    />
-  );
+    case "upload":
+    default:
+      return (
+        <UploadPage
+          onStartMapping={handleStartMapping}
+        />
+      );
+  }
 }
