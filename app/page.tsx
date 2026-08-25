@@ -1,13 +1,10 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { HomePage } from "@/components/home/home-page";
 
-export default function HomePage() {
+export default function HomeRoute() {
   return (
     <AppShell>
-      <div className="flex h-full min-h-[500px] items-center justify-center">
-        <p className="text-sm text-[#85837a]">
-          Application Shell
-        </p>
-      </div>
+      <HomePage />
     </AppShell>
   );
 }
