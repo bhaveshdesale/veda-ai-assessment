@@ -1,19 +1,38 @@
+"use client";
+
+import { useState } from "react";
+import { UploadPage } from "./upload/upload-page";
+import { ProcessingPage } from "./processing/processing-page";
+import { AssessmentPage } from "./review/assessment-page";
+
+type ExamStage = "upload" | "processing" | "review";
+
 export function ExamsPage() {
+  const [stage, setStage] = useState<ExamStage>("upload");
+
+  function handleStartMapping() {
+    setStage("processing");
+  }
+
+  function handleProcessingComplete() {
+    setStage("review");
+  }
+
+  if (stage === "processing") {
+    return (
+      <ProcessingPage
+        onComplete={handleProcessingComplete}
+      />
+    );
+  }
+
+  if (stage === "review") {
+    return <AssessmentPage />;
+  }
+
   return (
-    <div className="flex min-h-[600px] items-center justify-center">
-      <div className="text-center">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#f15b32]">
-          AI Assessment
-        </p>
-
-        <h1 className="mt-2 text-[26px] font-bold tracking-[-0.05em] text-[#34342f]">
-          Exams
-        </h1>
-
-        <p className="mt-2 text-[10px] text-[#85837a]">
-          Assessment workflow coming next.
-        </p>
-      </div>
-    </div>
+    <UploadPage
+      onStartMapping={handleStartMapping}
+    />
   );
 }
