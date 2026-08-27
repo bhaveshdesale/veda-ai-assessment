@@ -14,14 +14,21 @@ import type {
 import { UploadCard } from "./upload-card";
 
 type UploadPageProps = {
-  onStartMapping: () => void;
+  onStartMapping: (
+    questionPaper: File,
+    answerSheet: File,
+  ) => void;
 };
 
 export function UploadPage({
   onStartMapping,
 }: UploadPageProps) {
-  const [questionPaper, setQuestionPaper] =
-    useState<UploadFile | null>(null);
+  const [
+    questionPaper,
+    setQuestionPaper,
+  ] = useState<UploadFile | null>(
+    null,
+  );
 
   const [
     questionPaperError,
@@ -30,8 +37,12 @@ export function UploadPage({
     null,
   );
 
-  const [answerSheet, setAnswerSheet] =
-    useState<UploadFile | null>(null);
+  const [
+    answerSheet,
+    setAnswerSheet,
+  ] = useState<UploadFile | null>(
+    null,
+  );
 
   const [
     answerSheetError,
@@ -58,6 +69,20 @@ export function UploadPage({
   ) {
     setAnswerSheet(file);
     setAnswerSheetError(error);
+  }
+
+  function handleStartMapping() {
+    if (
+      !questionPaper ||
+      !answerSheet
+    ) {
+      return;
+    }
+
+    onStartMapping(
+      questionPaper.file,
+      answerSheet.file,
+    );
   }
 
   return (
@@ -110,7 +135,9 @@ export function UploadPage({
         <button
           type="button"
           disabled={!canStart}
-          onClick={onStartMapping}
+          onClick={
+            handleStartMapping
+          }
           className={[
             "flex h-[36px] items-center gap-2 rounded-full px-6",
             "text-[9px] font-semibold transition-all",
@@ -120,6 +147,7 @@ export function UploadPage({
           ].join(" ")}
         >
           Start Mapping
+
           <ArrowRight size={13} />
         </button>
 

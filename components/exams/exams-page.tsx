@@ -1,43 +1,3 @@
-// "use client";
-
-// import { useState } from "react";
-// import { UploadPage } from "./upload/upload-page";
-// import { ProcessingPage } from "./processing/processing-page";
-// import { AssessmentPage } from "./review/assessment-page";
-
-// type ExamStage = "upload" | "processing" | "review";
-
-// export function ExamsPage() {
-//   const [stage, setStage] = useState<ExamStage>("upload");
-
-//   function handleStartMapping() {
-//     setStage("processing");
-//   }
-
-//   function handleProcessingComplete() {
-//     setStage("review");
-//   }
-
-//   if (stage === "processing") {
-//     return (
-//       <ProcessingPage
-//         onComplete={handleProcessingComplete}
-//       />
-//     );
-//   }
-
-//   if (stage === "review") {
-//     return <AssessmentPage />;
-//   }
-
-//   return (
-//     <UploadPage
-//       onStartMapping={handleStartMapping}
-//     />
-//   );
-// }
-
-
 "use client";
 
 import { useState } from "react";
@@ -55,7 +15,28 @@ export function ExamsPage() {
   const [stage, setStage] =
     useState<ExamStage>("upload");
 
-  function handleStartMapping() {
+  const [
+    questionPaperFile,
+    setQuestionPaperFile,
+  ] = useState<File | null>(null);
+
+  const [
+    answerSheetFile,
+    setAnswerSheetFile,
+  ] = useState<File | null>(null);
+
+  function handleStartMapping(
+    questionPaper: File,
+    answerSheet: File,
+  ) {
+    setQuestionPaperFile(
+      questionPaper,
+    );
+
+    setAnswerSheetFile(
+      answerSheet,
+    );
+
     setStage("processing");
   }
 
@@ -63,25 +44,37 @@ export function ExamsPage() {
     setStage("review");
   }
 
-  switch (stage) {
-    case "processing":
-      return (
-        <ProcessingPage
-          onComplete={
-            handleProcessingComplete
-          }
-        />
-      );
-
-    case "review":
-      return <AssessmentPage />;
-
-    case "upload":
-    default:
-      return (
-        <UploadPage
-          onStartMapping={handleStartMapping}
-        />
-      );
+  if (stage === "processing") {
+    return (
+      <ProcessingPage
+        questionPaperFile={
+          questionPaperFile
+        }
+        answerSheetFile={
+          answerSheetFile
+        }
+        onComplete={
+          handleProcessingComplete
+        }
+      />
+    );
   }
+
+  if (stage === "review") {
+    return (
+      <AssessmentPage
+        answerSheetFile={
+          answerSheetFile
+        }
+      />
+    );
+  }
+
+  return (
+    <UploadPage
+      onStartMapping={
+        handleStartMapping
+      }
+    />
+  );
 }

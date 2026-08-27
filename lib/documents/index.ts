@@ -9,3 +9,6 @@ export type {
   DocumentValidationResult,
 } from "./validate-file";
 
+export {
+  fetchDocumentPages,
+} from "./fetch-pages";

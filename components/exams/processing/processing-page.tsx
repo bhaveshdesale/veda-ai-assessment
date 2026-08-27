@@ -5,7 +5,11 @@ import {
   CheckCircle2,
   Loader2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { PROCESSING_STEPS } from "@/lib/constants";
 import type { ProcessingStep } from "@/types/processing";
@@ -13,65 +17,125 @@ import type { ProcessingStep } from "@/types/processing";
 import { ProcessingSteps } from "./processing-steps";
 
 type ProcessingPageProps = {
+  questionPaperFile: File | null;
+  answerSheetFile: File | null;
   onComplete: () => void;
 };
 
 export function ProcessingPage({
+  questionPaperFile,
+  answerSheetFile,
   onComplete,
 }: ProcessingPageProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [hasError, setHasError] = useState(false);
+  /*
+   * The files are passed into this stage
+   * so the real processing pipeline can
+   * consume them next.
+   *
+   * Actual API processing will replace
+   * the simulated timer in the next step.
+   */
+  void questionPaperFile;
+  void answerSheetFile;
+
+  const [
+    currentStep,
+    setCurrentStep,
+  ] = useState(0);
+
+  const [
+    hasError,
+    setHasError,
+  ] = useState(false);
 
   const isCompleted =
-    currentStep >= PROCESSING_STEPS.length;
+    currentStep >=
+    PROCESSING_STEPS.length;
 
-  const steps = useMemo<ProcessingStep[]>(() => {
-    return PROCESSING_STEPS.map((step, index) => ({
-      ...step,
-      status: hasError && index === currentStep
-        ? "error"
-        : index < currentStep
-          ? "completed"
-          : index === currentStep
-            ? "processing"
-            : "pending",
-    }));
-  }, [currentStep, hasError]);
+  const steps =
+    useMemo<ProcessingStep[]>(
+      () =>
+        PROCESSING_STEPS.map(
+          (step, index) => ({
+            ...step,
+
+            status:
+              hasError &&
+              index === currentStep
+                ? "error"
+                : index < currentStep
+                  ? "completed"
+                  : index ===
+                      currentStep
+                    ? "processing"
+                    : "pending",
+          }),
+        ),
+      [
+        currentStep,
+        hasError,
+      ],
+    );
 
   useEffect(() => {
-    if (hasError || isCompleted) {
+    if (
+      hasError ||
+      isCompleted
+    ) {
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      setCurrentStep((value) => value + 1);
-    }, 900);
+    const timer =
+      window.setTimeout(() => {
+        setCurrentStep(
+          (value) => value + 1,
+        );
+      }, 900);
 
     return () => {
-      window.clearTimeout(timer);
-    };
-  }, [currentStep, hasError, isCompleted]);
-
-  useEffect(() => {
-    if (!isCompleted || hasError) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      onComplete();
-    }, 700);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [isCompleted, hasError, onComplete]);
-
-  const progress = isCompleted
-    ? 100
-    : Math.min(
-        (currentStep / PROCESSING_STEPS.length) * 100,
-        95,
+      window.clearTimeout(
+        timer,
       );
+    };
+  }, [
+    currentStep,
+    hasError,
+    isCompleted,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCompleted ||
+      hasError
+    ) {
+      return;
+    }
+
+    const timer =
+      window.setTimeout(() => {
+        onComplete();
+      }, 700);
+
+    return () => {
+      window.clearTimeout(
+        timer,
+      );
+    };
+  }, [
+    isCompleted,
+    hasError,
+    onComplete,
+  ]);
+
+  const progress =
+    isCompleted
+      ? 100
+      : Math.min(
+          (currentStep /
+            PROCESSING_STEPS.length) *
+            100,
+          95,
+        );
 
   function handleRetry() {
     setHasError(false);
@@ -79,13 +143,21 @@ export function ProcessingPage({
   }
 
   if (hasError) {
-    return <ProcessingError onRetry={handleRetry} />;
+    return (
+      <ProcessingError
+        onRetry={
+          handleRetry
+        }
+      />
+    );
   }
 
   if (isCompleted) {
     return (
       <ProcessingComplete
-        onContinue={onComplete}
+        onContinue={
+          onComplete
+        }
       />
     );
   }
@@ -110,8 +182,9 @@ export function ProcessingPage({
           </h1>
 
           <p className="mx-auto mt-2 max-w-[360px] text-[10px] leading-5 text-[#8b8981]">
-            We&apos;re extracting questions,
-            reading the student&apos;s answers and
+            We&apos;re extracting
+            questions, reading the
+            student&apos;s answers and
             preparing the assessment.
           </p>
         </div>
@@ -123,7 +196,10 @@ export function ProcessingPage({
             </span>
 
             <span className="text-[8px] font-semibold text-[#f15b32]">
-              {Math.round(progress)}%
+              {Math.round(
+                progress,
+              )}
+              %
             </span>
           </div>
 
@@ -138,13 +214,16 @@ export function ProcessingPage({
         </div>
 
         <div className="mt-8">
-          <ProcessingSteps steps={steps} />
+          <ProcessingSteps
+            steps={steps}
+          />
         </div>
 
         <div className="mt-7 rounded-[10px] bg-[#f6f3eb] px-4 py-3">
           <p className="text-center text-[8px] leading-4 text-[#8f8c84]">
-            Keep this window open while your
-            assessment is being processed.
+            Keep this window open while
+            your assessment is being
+            processed.
           </p>
         </div>
       </div>
@@ -168,13 +247,16 @@ function ProcessingError({
         </div>
 
         <h1 className="mt-5 text-[20px] font-bold tracking-[-0.04em] text-[#34342f]">
-          We couldn&apos;t process your assessment
+          We couldn&apos;t process
+          your assessment
         </h1>
 
         <p className="mx-auto mt-3 max-w-[340px] text-[10px] leading-5 text-[#8b8981]">
-          Something went wrong while analyzing the
-          uploaded documents. Your files are still
-          available and you can try again.
+          Something went wrong while
+          analyzing the uploaded
+          documents. Your files are
+          still available and you can
+          try again.
         </p>
 
         <button
@@ -209,8 +291,8 @@ function ProcessingComplete({
         </h1>
 
         <p className="mt-2 text-[10px] leading-5 text-[#8b8981]">
-          Questions and answers have been prepared
-          for review.
+          Questions and answers have
+          been prepared for review.
         </p>
 
         <button
