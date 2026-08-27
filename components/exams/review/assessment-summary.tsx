@@ -4,10 +4,10 @@ import {
   Circle,
 } from "lucide-react";
 
-import type { AssessmentSummary } from "@/types/assessment";
+import type { AssessmentSummary as AssessmentSummaryData } from "@/types/assessment";
 
 type AssessmentSummaryProps = {
-  summary: AssessmentSummary;
+  summary: AssessmentSummaryData;
 };
 
 export function AssessmentSummary({
@@ -32,6 +32,7 @@ export function AssessmentSummary({
 
           <p className="mt-1 text-[22px] font-bold tracking-[-0.04em] text-[#34342f]">
             {summary.obtainedMarks}
+
             <span className="text-[12px] font-medium text-[#aaa69d]">
               /{summary.totalMarks}
             </span>
@@ -47,9 +48,7 @@ export function AssessmentSummary({
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <SummaryItem
-          icon={
-            <CheckCircle2 size={11} />
-          }
+          icon={<CheckCircle2 size={11} />}
           label="Answered"
           value={summary.answered}
           className="text-[#6d8c63]"
@@ -63,9 +62,7 @@ export function AssessmentSummary({
         />
 
         <SummaryItem
-          icon={
-            <AlertCircle size={11} />
-          }
+          icon={<AlertCircle size={11} />}
           label="Review"
           value={summary.needsReview}
           className="text-[#e36b44]"

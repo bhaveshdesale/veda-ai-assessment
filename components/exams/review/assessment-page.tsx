@@ -6,9 +6,12 @@ import {
   useState,
 } from "react";
 
+import { fetchDocumentPages } from "@/lib/documents";
+
 import {
-  fetchDocumentPages,
-} from "@/lib/documents";
+  buildAssessmentQuestions,
+  buildUnmatchedAnswers,
+} from "@/lib/assessment/adapter";
 
 import type {
   UnmatchedAnswer,
@@ -18,15 +21,13 @@ import type {
   DocumentPage,
 } from "@/types/document";
 
+import type {
+  AssessmentProcessingResult,
+} from "@/types/processing";
+
 import { AnswerSheetViewer } from "./answer-sheet-viewer";
 import { AssessmentHeader } from "./assessment-header";
 import { AssessmentSummary } from "./assessment-summary";
-
-import {
-  assessmentQuestions,
-  unmatchedAnswers,
-} from "./mock-assessment";
-
 import { QuestionDetail } from "./question-detail";
 import { QuestionList } from "./question-list";
 import { ReviewMobileTabs } from "./review-mobile-tabs";
@@ -38,11 +39,47 @@ type ReviewTab =
 
 type AssessmentPageProps = {
   answerSheetFile: File | null;
+  processingResult: AssessmentProcessingResult;
 };
 
 export function AssessmentPage({
   answerSheetFile,
+  processingResult,
 }: AssessmentPageProps) {
+  const {
+    questions,
+    answers,
+    mappings,
+  } = processingResult;
+
+  const assessmentQuestions =
+    useMemo(
+      () =>
+        buildAssessmentQuestions(
+          questions,
+          answers,
+          mappings,
+        ),
+      [
+        questions,
+        answers,
+        mappings,
+      ],
+    );
+
+  const unmatchedAnswers =
+    useMemo(
+      () =>
+        buildUnmatchedAnswers(
+          answers,
+          mappings,
+        ),
+      [
+        answers,
+        mappings,
+      ],
+    );
+
   const [
     documentPages,
     setDocumentPages,
@@ -59,9 +96,7 @@ export function AssessmentPage({
   ] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] =
-    useState(
-      assessmentQuestions[0]?.id ?? "",
-    );
+    useState("");
 
   const [
     selectedUnmatchedAnswer,
@@ -74,12 +109,10 @@ export function AssessmentPage({
     useState<ReviewTab>("questions");
 
   /*
-   * Render the uploaded answer sheet
-   * into document page objects.
+   * Load answer-sheet document pages.
    */
   useEffect(() => {
     if (!answerSheetFile) {
-      setDocumentPages([]);
       return;
     }
 
@@ -130,18 +163,34 @@ export function AssessmentPage({
     };
   }, [answerSheetFile]);
 
+  /*
+   * Select first question once the
+   * extracted questions are available.
+   */
+  const activeSelectedId =
+    selectedId ||
+    assessmentQuestions[0]?.id ||
+    "";
+
   const selectedQuestion =
-    useMemo(() => {
-      return (
+    useMemo(
+      () =>
         assessmentQuestions.find(
           (question) =>
             question.id ===
-            selectedId,
+            activeSelectedId,
         ) ??
-        assessmentQuestions[0]
-      );
-    }, [selectedId]);
+        assessmentQuestions[0] ??
+        null,
+      [
+        assessmentQuestions,
+        activeSelectedId,
+      ],
+    );
 
+  /*
+   * Assessment summary.
+   */
   const summary = useMemo(() => {
     const totalMarks =
       assessmentQuestions.reduce(
@@ -185,27 +234,23 @@ export function AssessmentPage({
       unmatched:
         unmatchedAnswers.length,
     };
-  }, []);
+  }, [
+    assessmentQuestions,
+    unmatchedAnswers,
+  ]);
 
   function handleQuestionSelect(
     id: string,
   ) {
     setSelectedId(id);
-
-    setSelectedUnmatchedAnswer(
-      null,
-    );
-
+    setSelectedUnmatchedAnswer(null);
     setMobileTab("answer");
   }
 
   function handleUnmatchedSelect(
     answer: UnmatchedAnswer,
   ) {
-    setSelectedUnmatchedAnswer(
-      answer,
-    );
-
+    setSelectedUnmatchedAnswer(answer);
     setMobileTab("answer");
   }
 
@@ -215,10 +260,26 @@ export function AssessmentPage({
     setMobileTab(tab);
   }
 
+  if (!selectedQuestion) {
+    return (
+      <section className="flex min-h-[calc(100vh-64px)] items-center justify-center px-5">
+        <div className="rounded-[16px] bg-[#fffdf8] p-8 text-center shadow-sm">
+          <h1 className="text-[18px] font-bold text-[#34342f]">
+            No questions found
+          </h1>
+
+          <p className="mt-2 text-[10px] text-[#8b8981]">
+            No questions could be extracted
+            from the question paper.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="h-[calc(100vh-64px)] overflow-hidden p-3 sm:p-5">
       <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[16px] bg-[#fffdf8] shadow-[0_3px_15px_rgba(70,60,40,0.05)]">
-
         <AssessmentHeader
           total={
             assessmentQuestions.length
@@ -242,13 +303,11 @@ export function AssessmentPage({
         />
 
         <div className="min-h-0 flex-1 lg:grid lg:grid-cols-[280px_minmax(320px,1fr)_minmax(380px,1.15fr)]">
-
           {/* Questions */}
           <div
             className={[
               "min-h-0 overflow-hidden",
-              mobileTab ===
-              "questions"
+              mobileTab === "questions"
                 ? "block"
                 : "hidden",
               "lg:block",
@@ -267,7 +326,7 @@ export function AssessmentPage({
                   unmatchedAnswers
                 }
                 selectedId={
-                  selectedId
+                  activeSelectedId
                 }
                 onSelect={
                   handleQuestionSelect
@@ -283,8 +342,7 @@ export function AssessmentPage({
           <div
             className={[
               "min-h-0 overflow-hidden",
-              mobileTab ===
-              "answer"
+              mobileTab === "answer"
                 ? "block"
                 : "hidden",
               "lg:block",
@@ -312,8 +370,7 @@ export function AssessmentPage({
           <div
             className={[
               "min-h-0 overflow-hidden",
-              mobileTab ===
-              "sheet"
+              mobileTab === "sheet"
                 ? "block"
                 : "hidden",
               "lg:block",
@@ -322,16 +379,13 @@ export function AssessmentPage({
             {isLoadingDocumentPages ? (
               <div className="flex h-full items-center justify-center bg-[#e8e4db]">
                 <p className="text-[9px] text-[#77746c]">
-                  Rendering answer
-                  sheet...
+                  Rendering answer sheet...
                 </p>
               </div>
             ) : documentPageError ? (
               <div className="flex h-full items-center justify-center bg-[#e8e4db] p-6">
                 <p className="text-center text-[9px] text-[#b56750]">
-                  {
-                    documentPageError
-                  }
+                  {documentPageError}
                 </p>
               </div>
             ) : (
@@ -366,16 +420,14 @@ function UnmatchedAnswerDetail({
       </span>
 
       <h2 className="mt-5 text-[16px] font-bold leading-6 text-[#34342f]">
-        Answer could not be
-        mapped
+        Answer could not be mapped
       </h2>
 
       <p className="mt-2 text-[9px] leading-5 text-[#99968c]">
-        This response was detected
-        on page {answer.page}, but
-        the system could not
-        confidently associate it with
-        a question.
+        This response was detected on
+        page {answer.page}, but the system
+        could not confidently associate it
+        with a question.
       </p>
 
       <div className="mt-6 rounded-[12px] bg-[#fff8f3] p-4">
@@ -397,8 +449,8 @@ function UnmatchedAnswerDetail({
         </p>
 
         <p className="mt-1 text-[8px] leading-4 text-[#aaa69d]">
-          A teacher should review
-          this response manually.
+          A teacher should review this
+          response manually.
         </p>
       </div>
     </div>

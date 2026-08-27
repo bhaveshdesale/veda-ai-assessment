@@ -1,39 +1,35 @@
-export const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-export const ACCEPTED_FILE_TYPES = [
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-];
-
 export const ACCEPTED_FILE_EXTENSIONS =
-  ".pdf,.jpg,.jpeg,.png";
+  ".pdf,.png,.jpg,.jpeg";
 
-
-  export const PROCESSING_STEPS = [
+export const PROCESSING_STEPS = [
   {
-    id: "question-paper",
+    id: "reading-question-paper",
     label: "Reading question paper",
-    description: "Analyzing the uploaded question paper.",
+    description:
+      "Analyzing the uploaded question paper.",
   },
   {
-    id: "question-extraction",
+    id: "extracting-questions",
     label: "Extracting questions",
-    description: "Identifying questions and sub-parts.",
+    description:
+      "Identifying questions, sub-parts and marks.",
   },
   {
-    id: "answer-sheet",
+    id: "reading-answer-sheet",
     label: "Reading answer sheet",
-    description: "Analyzing the student's handwritten responses.",
+    description:
+      "Detecting student responses from the answer sheet.",
   },
   {
-    id: "answer-mapping",
+    id: "mapping-answers",
     label: "Mapping answers",
-    description: "Matching answers with their questions.",
+    description:
+      "Associating student responses with questions.",
   },
   {
-    id: "assessment",
+    id: "preparing-assessment",
     label: "Preparing assessment",
-    description: "Preparing the assessment review.",
+    description:
+      "Building the final assessment for review.",
   },
 ] as const;

@@ -1,22 +1,29 @@
 import { z } from "zod";
 
-export const questionSchema = z.object({
-  number: z.string().min(1),
-
-  text: z.string().min(1),
-
-  marks: z.number().nullable(),
-
-  order: z.number().int().nonnegative(),
-
+const answerRegionSchema = z.object({
   page: z.number().int().positive(),
+  x: z.number().min(0).max(100),
+  y: z.number().min(0).max(100),
+  width: z.number().min(0).max(100),
+  height: z.number().min(0).max(100),
+});
+
+const extractedQuestionSchema = z.object({
+  id: z.string(),
+  number: z.string(),
+  text: z.string(),
+  marks: z.number().nullable(),
+  order: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  region: answerRegionSchema,
 });
 
 export const questionExtractionSchema =
   z.object({
-    questions: z
-      .array(questionSchema)
-      .min(1),
+    questions: z.array(
+      extractedQuestionSchema,
+    ),
+    documentPages: z.number().int().positive(),
   });
 
 export const questionExtractionJsonSchema = {
@@ -30,6 +37,10 @@ export const questionExtractionJsonSchema = {
         type: "object",
 
         properties: {
+          id: {
+            type: "string",
+          },
+
           number: {
             type: "string",
           },
@@ -39,7 +50,14 @@ export const questionExtractionJsonSchema = {
           },
 
           marks: {
-            type: ["number", "null"],
+            anyOf: [
+              {
+                type: "number",
+              },
+              {
+                type: "null",
+              },
+            ],
           },
 
           order: {
@@ -49,18 +67,61 @@ export const questionExtractionJsonSchema = {
           page: {
             type: "integer",
           },
+
+          region: {
+            type: "object",
+
+            properties: {
+              page: {
+                type: "integer",
+              },
+
+              x: {
+                type: "number",
+              },
+
+              y: {
+                type: "number",
+              },
+
+              width: {
+                type: "number",
+              },
+
+              height: {
+                type: "number",
+              },
+            },
+
+            required: [
+              "page",
+              "x",
+              "y",
+              "width",
+              "height",
+            ],
+          },
         },
 
         required: [
+          "id",
           "number",
           "text",
           "marks",
           "order",
           "page",
+          "region",
         ],
       },
     },
+
+    documentPages: {
+      type: "integer",
+    },
   },
 
-  required: ["questions"],
+  required: [
+    "questions",
+    "documentPages",
+  ],
 };

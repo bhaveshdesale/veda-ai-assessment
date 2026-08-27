@@ -11,11 +11,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 2,
     score: 2,
     status: "answered",
+
     answer:
       "Plants are primarily responsible for photosynthesis because they contain chlorophyll.",
+
+    page: 2,
+
+    region: {
+      page: 2,
+      x: 10,
+      y: 15,
+      width: 80,
+      height: 12,
+    },
+
     answerMatch: {
       answerId: "a1",
       confidence: 0.98,
+      method: "question-number",
+      status: "mapped",
+
       regions: [
         {
           page: 2,
@@ -35,10 +50,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 2,
     score: 2,
     status: "answered",
-    answer: "Arteries carry blood away from the heart.",
+
+    answer:
+      "Arteries carry blood away from the heart.",
+
+    page: 3,
+
+    region: {
+      page: 3,
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 12,
+    },
+
     answerMatch: {
       answerId: "a2",
       confidence: 0.99,
+      method: "question-number",
+      status: "mapped",
+
       regions: [
         {
           page: 3,
@@ -58,11 +89,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 5,
     score: 4,
     status: "answered",
+
     answer:
       "Photosynthesis is the process by which green plants use sunlight, carbon dioxide and water to produce glucose and oxygen.",
+
+    page: 4,
+
+    region: {
+      page: 4,
+      x: 10,
+      y: 15,
+      width: 80,
+      height: 15,
+    },
+
     answerMatch: {
       answerId: "a3",
       confidence: 0.95,
+      method: "combined",
+      status: "mapped",
+
       regions: [
         {
           page: 4,
@@ -89,7 +135,19 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 2,
     score: 0,
     status: "unanswered",
+
     answer: null,
+
+    page: 5,
+
+    region: {
+      page: 5,
+      x: 10,
+      y: 50,
+      width: 80,
+      height: 12,
+    },
+
     answerMatch: null,
   },
 
@@ -100,11 +158,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 5,
     score: 4,
     status: "answered",
+
     answer:
       "Cellular respiration releases energy from glucose. It mainly occurs in mitochondria and produces ATP.",
+
+    page: 6,
+
+    region: {
+      page: 6,
+      x: 10,
+      y: 15,
+      width: 80,
+      height: 15,
+    },
+
     answerMatch: {
       answerId: "a5",
       confidence: 0.93,
+      method: "question-number",
+      status: "mapped",
+
       regions: [
         {
           page: 6,
@@ -124,11 +197,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 3,
     score: 1,
     status: "review",
+
     answer:
       "Water is transported through the plant using specialized tissues.",
+
+    page: 7,
+
+    region: {
+      page: 7,
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 15,
+    },
+
     answerMatch: {
       answerId: "a6",
       confidence: 0.67,
+      method: "semantic",
+      status: "needs-review",
+
       regions: [
         {
           page: 7,
@@ -148,11 +236,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 2,
     score: 2,
     status: "answered",
+
     answer:
       "Inheritance is the transmission of characteristics from parents to offspring.",
+
+    page: 9,
+
+    region: {
+      page: 9,
+      x: 10,
+      y: 15,
+      width: 80,
+      height: 12,
+    },
+
     answerMatch: {
       answerId: "a11a",
       confidence: 0.97,
+      method: "question-number",
+      status: "mapped",
+
       regions: [
         {
           page: 9,
@@ -172,11 +275,26 @@ export const assessmentQuestions: AssessmentQuestion[] = [
     marks: 3,
     score: 1,
     status: "review",
+
     answer:
       "Polymorphism allows objects of different classes to respond to the same interface.",
+
+    page: 10,
+
+    region: {
+      page: 10,
+      x: 10,
+      y: 35,
+      width: 80,
+      height: 12,
+    },
+
     answerMatch: {
       answerId: "a11b",
       confidence: 0.61,
+      method: "semantic",
+      status: "needs-review",
+
       regions: [
         {
           page: 10,
@@ -194,8 +312,12 @@ export const unmatchedAnswers: UnmatchedAnswer[] = [
   {
     id: "unmatched-1",
     page: 8,
-    text: "The mitochondria produces energy for the cell...",
+
+    text:
+      "The mitochondria produces energy for the cell...",
+
     confidence: 0.34,
+
     regions: [
       {
         page: 8,

@@ -1,3 +1,7 @@
+import type { ExtractedQuestion } from "./extraction";
+import type { ExtractedAnswer } from "./extraction";
+import type { AnswerMapping } from "./mapping";
+
 export type ProcessingStepStatus =
   | "pending"
   | "processing"
@@ -11,7 +15,8 @@ export type ProcessingStep = {
   status: ProcessingStepStatus;
 };
 
-export type ProcessingState =
-  | "processing"
-  | "completed"
-  | "error";
+export type AssessmentProcessingResult = {
+  questions: ExtractedQuestion[];
+  answers: ExtractedAnswer[];
+  mappings: AnswerMapping[];
+};

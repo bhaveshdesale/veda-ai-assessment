@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 
+import type {
+  AssessmentProcessingResult,
+} from "@/types/processing";
+
 import { ProcessingPage } from "./processing/processing-page";
 import { AssessmentPage } from "./review/assessment-page";
 import { UploadPage } from "./upload/upload-page";
@@ -25,6 +29,14 @@ export function ExamsPage() {
     setAnswerSheetFile,
   ] = useState<File | null>(null);
 
+  const [
+    processingResult,
+    setProcessingResult,
+  ] =
+    useState<AssessmentProcessingResult | null>(
+      null,
+    );
+
   function handleStartMapping(
     questionPaper: File,
     answerSheet: File,
@@ -37,10 +49,15 @@ export function ExamsPage() {
       answerSheet,
     );
 
+    setProcessingResult(null);
+
     setStage("processing");
   }
 
-  function handleProcessingComplete() {
+  function handleProcessingComplete(
+    result: AssessmentProcessingResult,
+  ) {
+    setProcessingResult(result);
     setStage("review");
   }
 
@@ -60,11 +77,17 @@ export function ExamsPage() {
     );
   }
 
-  if (stage === "review") {
+  if (
+    stage === "review" &&
+    processingResult
+  ) {
     return (
       <AssessmentPage
         answerSheetFile={
           answerSheetFile
+        }
+        processingResult={
+          processingResult
         }
       />
     );

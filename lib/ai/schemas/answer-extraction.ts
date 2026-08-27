@@ -7,20 +7,26 @@ const answerRegionSchema = z.object({
 
   y: z.number().min(0).max(100),
 
-  width: z.number().positive().max(100),
+  width: z.number().min(0).max(100),
 
-  height: z.number().positive().max(100),
+  height: z.number().min(0).max(100),
 });
 
 const extractedAnswerSchema = z.object({
-  questionNumber: z.string().nullable(),
+  id: z.string(),
+
+  questionNumber:
+    z.string().nullable(),
 
   text: z.string(),
 
-  regions: z.array(answerRegionSchema),
+  regions: z.array(
+    answerRegionSchema,
+  ),
 
-  pages: z
-    .array(z.number().int().positive()),
+  pages: z.array(
+    z.number().int().positive(),
+  ),
 
   order: z.number().int().nonnegative(),
 
@@ -45,8 +51,19 @@ export const answerExtractionJsonSchema = {
         type: "object",
 
         properties: {
+          id: {
+            type: "string",
+          },
+
           questionNumber: {
-            type: ["string", "null"],
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
           },
 
           text: {
@@ -109,6 +126,7 @@ export const answerExtractionJsonSchema = {
         },
 
         required: [
+          "id",
           "questionNumber",
           "text",
           "regions",

@@ -67,6 +67,11 @@ export async function extractAnswers(
     `Gemini succeeded with ${GEMINI_MODEL}`,
   );
 
+  console.log(
+    "Gemini raw response:",
+    response.text,
+  );
+
   let parsedResponse: unknown;
 
   try {
@@ -98,7 +103,9 @@ export async function extractAnswers(
   const answers =
     validationResult.data.answers.map(
       (answer, index) => ({
-        id: `answer-${index + 1}`,
+        id:
+          answer.id ||
+          `answer-${index + 1}`,
 
         questionNumber:
           answer.questionNumber,
@@ -116,7 +123,17 @@ export async function extractAnswers(
       }),
     );
 
+  const documentPages =
+    answers.length === 0
+      ? 0
+      : Math.max(
+          ...answers.flatMap(
+            (answer) => answer.pages,
+          ),
+        );
+
   return {
     answers,
+    documentPages,
   };
 }

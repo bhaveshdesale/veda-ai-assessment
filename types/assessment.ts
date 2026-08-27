@@ -1,8 +1,3 @@
-export type QuestionStatus =
-  | "answered"
-  | "unanswered"
-  | "review";
-
 export type AnswerRegion = {
   page: number;
   x: number;
@@ -11,10 +6,25 @@ export type AnswerRegion = {
   height: number;
 };
 
-export type AnswerMatch = {
+export type AssessmentQuestionStatus =
+  | "answered"
+  | "unanswered"
+  | "review";
+
+export type AssessmentAnswerMatch = {
   answerId: string;
   confidence: number;
+  method:
+    | "question-number"
+    | "spatial"
+    | "semantic"
+    | "combined";
   regions: AnswerRegion[];
+  status:
+    | "mapped"
+    | "needs-review"
+    | "unanswered"
+    | "unmatched";
 };
 
 export type AssessmentQuestion = {
@@ -23,15 +33,17 @@ export type AssessmentQuestion = {
   text: string;
   marks: number;
   score: number;
-  status: QuestionStatus;
+  status: AssessmentQuestionStatus;
   answer: string | null;
-  answerMatch: AnswerMatch | null;
+  answerMatch: AssessmentAnswerMatch | null;
+  page: number;
+  region: AnswerRegion;
 };
 
 export type UnmatchedAnswer = {
   id: string;
-  page: number;
   text: string;
+  page: number;
   confidence: number;
   regions: AnswerRegion[];
 };

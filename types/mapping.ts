@@ -1,4 +1,6 @@
-import type { AnswerRegion } from "./assessment";
+import type {
+  AnswerRegion,
+} from "./assessment";
 
 export type MappingMethod =
   | "question-number"
@@ -8,6 +10,7 @@ export type MappingMethod =
 
 export type AnswerMapping = {
   questionId: string;
+
   answerId: string | null;
 
   confidence: number;
