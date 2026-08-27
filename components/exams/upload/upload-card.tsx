@@ -22,9 +22,14 @@ import type {
   UploadFile,
 } from "@/types/upload";
 
+type UploadDocumentKind =
+  | "question-paper"
+  | "answer-sheet";
+
 type UploadCardProps = {
   title: string;
   description: string;
+  kind: UploadDocumentKind;
   file: UploadFile | null;
   error: UploadError | null;
   onFileChange: (
@@ -48,19 +53,31 @@ const errorMessages: Record<
 export function UploadCard({
   title,
   description,
+  kind,
   file,
   error,
   onFileChange,
 }: UploadCardProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const inputRef =
+    useRef<HTMLInputElement>(null);
 
-  function handleFile(fileToUpload: File) {
+  const [isDragging, setIsDragging] =
+    useState(false);
+
+  function handleFile(
+    fileToUpload: File,
+  ) {
     const validationError =
-      validateUpload(fileToUpload);
+      validateUpload(
+        fileToUpload,
+        kind,
+      );
 
     if (validationError) {
-      onFileChange(null, validationError);
+      onFileChange(
+        null,
+        validationError,
+      );
       return;
     }
 
@@ -89,6 +106,7 @@ export function UploadCard({
     event: React.DragEvent<HTMLLabelElement>,
   ) {
     event.preventDefault();
+
     setIsDragging(false);
 
     const droppedFile =
@@ -110,15 +128,26 @@ export function UploadCard({
     onFileChange(null, null);
   }
 
+  function openFilePicker(
+    event: React.MouseEvent,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    inputRef.current?.click();
+  }
+
   return (
     <div className="rounded-[15px] bg-[#fffaf0] p-2">
       <label
-        htmlFor={`${title}-upload`}
+        htmlFor={`${kind}-upload`}
         onDragOver={(event) => {
           event.preventDefault();
           setIsDragging(true);
         }}
-        onDragLeave={() => setIsDragging(false)}
+        onDragLeave={() =>
+          setIsDragging(false)
+        }
         onDrop={handleDrop}
         className={[
           "relative flex min-h-[160px] cursor-pointer",
@@ -136,7 +165,7 @@ export function UploadCard({
       >
         <input
           ref={inputRef}
-          id={`${title}-upload`}
+          id={`${kind}-upload`}
           type="file"
           accept={ACCEPTED_FILE_EXTENSIONS}
           onChange={handleInputChange}
@@ -159,11 +188,7 @@ export function UploadCard({
 
             <button
               type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                inputRef.current?.click();
-              }}
+              onClick={openFilePicker}
               className="mt-3 text-[8px] font-semibold text-[#f15b32]"
             >
               Choose another file
@@ -172,7 +197,8 @@ export function UploadCard({
         ) : file ? (
           <>
             <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[#e4eedf] text-[#6d8c63]">
-              {file.type === "application/pdf" ? (
+              {file.type ===
+              "application/pdf" ? (
                 <FileText size={17} />
               ) : (
                 <ImageIcon size={17} />
@@ -197,11 +223,7 @@ export function UploadCard({
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  inputRef.current?.click();
-                }}
+                onClick={openFilePicker}
                 className="text-[8px] font-semibold text-[#66645d] hover:text-[#f15b32]"
               >
                 Replace

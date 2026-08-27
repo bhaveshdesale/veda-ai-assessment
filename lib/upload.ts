@@ -1,7 +1,5 @@
-import {
-  ACCEPTED_FILE_TYPES,
-  MAX_FILE_SIZE,
-} from "./constants";
+import { validateDocumentFile } from "@/lib/documents";
+
 import type {
   UploadError,
   UploadFile,
@@ -9,13 +7,26 @@ import type {
 
 export function validateUpload(
   file: File,
+  kind:
+    | "question-paper"
+    | "answer-sheet",
 ): UploadError | null {
-  if (!ACCEPTED_FILE_TYPES.includes(file.type)) {
-    return "invalid-type";
-  }
+  const result = validateDocumentFile(
+    file,
+    kind,
+  );
 
-  if (file.size > MAX_FILE_SIZE) {
-    return "too-large";
+  if (!result.valid) {
+    switch (result.error) {
+      case "invalid-type":
+        return "invalid-type";
+
+      case "too-large":
+        return "too-large";
+
+      case "empty-file":
+        return "read-error";
+    }
   }
 
   return null;
@@ -43,5 +54,8 @@ export function formatFileSize(
     return `${Math.round(bytes / 1024)} KB`;
   }
 
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(
+    bytes /
+    (1024 * 1024)
+  ).toFixed(1)} MB`;
 }
