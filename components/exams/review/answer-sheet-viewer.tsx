@@ -1,7 +1,948 @@
+// "use client";
+
+// import { ChevronDown, Maximize2 } from "lucide-react";
+// import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// import * as pdfjsLib from "pdfjs-dist";
+
+// import type {
+//   AnswerRegion,
+//   AssessmentQuestion,
+//   UnmatchedAnswer,
+// } from "@/types/assessment";
+
+// import { ViewerControls } from "./viewer-controls";
+
+// /*
+//  * ============================================================
+//  * PDF.JS WORKER
+//  * ============================================================
+//  *
+//  * The ORIGINAL uploaded PDF is rendered directly in the browser.
+//  *
+//  * We do not convert the answer sheet into PNG.
+//  * We do not send the answer sheet through Gemini again.
+//  *
+//  * Gemini is only responsible for:
+//  *
+//  *   PDF
+//  *    ↓
+//  *   answer extraction
+//  *    ↓
+//  *   question mapping
+//  *    ↓
+//  *   coordinates
+//  *
+//  * PDF.js is responsible for:
+//  *
+//  *   ORIGINAL PDF
+//  *    ↓
+//  *   visual rendering
+//  *
+//  * The AI regions are then drawn over the original PDF.
+//  */
+
+// if (typeof window !== "undefined") {
+//   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+//     "pdfjs-dist/build/pdf.worker.min.mjs",
+//     import.meta.url,
+//   ).toString();
+// }
+
+// /*
+//  * ============================================================
+//  * PROPS
+//  * ============================================================
+//  */
+
+// type AnswerSheetViewerProps = {
+//   question: AssessmentQuestion;
+
+//   unmatchedAnswer?: UnmatchedAnswer | null;
+
+//   answerSheetFile: File | null;
+// };
+
+// /*
+//  * ============================================================
+//  * MAIN VIEWER
+//  * ============================================================
+//  */
+
+// export function AnswerSheetViewer({
+//   question,
+//   unmatchedAnswer,
+//   answerSheetFile,
+// }: AnswerSheetViewerProps) {
+//   /*
+//    * Get the AI regions belonging to the
+//    * selected question.
+//    *
+//    * Normal question:
+//    *
+//    * question.answerMatch.regions
+//    *
+//    * Unmatched answer:
+//    *
+//    * unmatchedAnswer.regions
+//    */
+
+//   const regions = useMemo<AnswerRegion[]>(() => {
+//     if (unmatchedAnswer) {
+//       return unmatchedAnswer.regions;
+//     }
+
+//     return question.answerMatch?.regions ?? [];
+//   }, [question.answerMatch?.regions, unmatchedAnswer]);
+
+//   /*
+//    * Recreate ViewerContent whenever the
+//    * selected question changes.
+//    *
+//    * This allows currentPage to initialize
+//    * from the first AI region without
+//    * calling setState() inside an effect.
+//    */
+
+//   return (
+//     <ViewerContent
+//       key={`${question.id}-${unmatchedAnswer?.id ?? "question"}`}
+//       regions={regions}
+//       unmatchedAnswer={unmatchedAnswer}
+//       answerSheetFile={answerSheetFile}
+//     />
+//   );
+// }
+
+// /*
+//  * ============================================================
+//  * VIEWER CONTENT
+//  * ============================================================
+//  */
+
+// function ViewerContent({
+//   regions,
+//   unmatchedAnswer,
+//   answerSheetFile,
+// }: {
+//   regions: AnswerRegion[];
+
+//   unmatchedAnswer?: UnmatchedAnswer | null;
+
+//   answerSheetFile: File | null;
+// }) {
+//   /*
+//    * ==========================================================
+//    * REFS
+//    * ==========================================================
+//    */
+
+//   const viewerRef = useRef<HTMLDivElement>(null);
+
+//   const pageContainerRef = useRef<HTMLDivElement>(null);
+
+//   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+//   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+//   const loadingTaskRef = useRef<ReturnType<typeof pdfjsLib.getDocument> | null>(
+//     null,
+//   );
+
+//   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
+
+//   /*
+//    * ==========================================================
+//    * STATE
+//    * ==========================================================
+//    */
+
+//   /*
+//    * The selected question's first region
+//    * determines the initial page.
+//    */
+
+//   const [currentPage, setCurrentPage] = useState(regions[0]?.page ?? 1);
+
+//   const [totalPages, setTotalPages] = useState(0);
+
+//   const [zoom, setZoom] = useState(100);
+
+//   const [loading, setLoading] = useState(Boolean(answerSheetFile));
+
+//   const [error, setError] = useState<string | null>(null);
+
+//   /*
+//    * ==========================================================
+//    * RELEVANT PAGES
+//    * ==========================================================
+//    */
+
+//   const pagesWithAnswers = useMemo(() => {
+//     return Array.from(new Set(regions.map((region) => region.page))).sort(
+//       (a, b) => a - b,
+//     );
+//   }, [regions]);
+
+//   const firstRelevantPage = pagesWithAnswers[0] ?? 1;
+
+//   /*
+//    * ==========================================================
+//    * LOAD ORIGINAL ANSWER SHEET
+//    * ==========================================================
+//    */
+
+//   useEffect(() => {
+//     if (!answerSheetFile) {
+//       setLoading(false);
+//       return;
+//     }
+
+//     let cancelled = false;
+
+//     async function loadPdf() {
+//       try {
+//         setLoading(true);
+//         setError(null);
+
+//         /*
+//          * Cancel any previous render.
+//          */
+
+//         if (renderTaskRef.current) {
+//           try {
+//             renderTaskRef.current.cancel();
+//           } catch {
+//             // Ignore cancellation.
+//           }
+
+//           renderTaskRef.current = null;
+//         }
+
+//         /*
+//          * Destroy previous loading task.
+//          */
+
+//         if (loadingTaskRef.current) {
+//           try {
+//             await loadingTaskRef.current.destroy();
+//           } catch {
+//             // Ignore cleanup errors.
+//           }
+
+//           loadingTaskRef.current = null;
+//         }
+
+//         /*
+//          * Clean previous PDF.
+//          *
+//          * Do NOT call pdf.destroy().
+//          *
+//          * Your installed PDFDocumentProxy
+//          * exposes cleanup().
+//          */
+
+//         if (pdfRef.current) {
+//           try {
+//             await pdfRef.current.cleanup();
+//           } catch {
+//             // Ignore cleanup errors.
+//           }
+
+//           pdfRef.current = null;
+//         }
+
+//         /*
+//          * Read the ORIGINAL uploaded PDF.
+//          */
+
+//         const file = answerSheetFile;
+
+//         if (!file) {
+//           return;
+//         }
+
+//         const arrayBuffer = await file.arrayBuffer();
+
+//         if (cancelled) {
+//           return;
+//         }
+
+//         /*
+//          * Load PDF directly with PDF.js.
+//          */
+
+//         const loadingTask = pdfjsLib.getDocument({
+//           data: new Uint8Array(arrayBuffer),
+//         });
+
+//         loadingTaskRef.current = loadingTask;
+
+//         const pdf = await loadingTask.promise;
+
+//         if (cancelled) {
+//           try {
+//             await pdf.cleanup();
+//           } catch {
+//             // Ignore cleanup errors.
+//           }
+
+//           return;
+//         }
+
+//         /*
+//          * Store loaded PDF.
+//          */
+
+//         pdfRef.current = pdf;
+
+//         setTotalPages(pdf.numPages);
+//       } catch (err) {
+//         if (cancelled) {
+//           return;
+//         }
+
+//         console.error("ANSWER SHEET PDF LOAD FAILED:", err);
+
+//         setError(
+//           err instanceof Error ? err.message : "Failed to load answer sheet.",
+//         );
+//       } finally {
+//         if (!cancelled) {
+//           setLoading(false);
+//         }
+//       }
+//     }
+
+//     void loadPdf();
+
+//     /*
+//      * Cleanup.
+//      */
+
+//     return () => {
+//       cancelled = true;
+
+//       /*
+//        * Cancel rendering.
+//        */
+
+//       if (renderTaskRef.current) {
+//         try {
+//           renderTaskRef.current.cancel();
+//         } catch {
+//           // Ignore cancellation.
+//         }
+
+//         renderTaskRef.current = null;
+//       }
+
+//       /*
+//        * Destroy loading task.
+//        */
+
+//       if (loadingTaskRef.current) {
+//         void loadingTaskRef.current.destroy().catch(() => {
+//           // Ignore cleanup errors.
+//         });
+
+//         loadingTaskRef.current = null;
+//       }
+
+//       /*
+//        * Cleanup PDF.
+//        */
+
+//       if (pdfRef.current) {
+//         try {
+//           void pdfRef.current.cleanup();
+//         } catch {
+//           // Ignore cleanup errors.
+//         }
+
+//         pdfRef.current = null;
+//       }
+//     };
+//   }, [answerSheetFile]);
+
+//   /*
+//    * ==========================================================
+//    * RENDER PDF PAGE
+//    * ==========================================================
+//    */
+
+//   const renderPage = useCallback(async () => {
+//     const pdf = pdfRef.current;
+
+//     const canvas = canvasRef.current;
+
+//     if (!pdf || !canvas || currentPage < 1 || currentPage > pdf.numPages) {
+//       return;
+//     }
+
+//     try {
+//       /*
+//        * Cancel previous render.
+//        */
+
+//       if (renderTaskRef.current) {
+//         try {
+//           renderTaskRef.current.cancel();
+//         } catch {
+//           // Ignore cancellation.
+//         }
+
+//         renderTaskRef.current = null;
+//       }
+
+//       /*
+//        * Get requested PDF page.
+//        */
+
+//       const page = await pdf.getPage(currentPage);
+
+//       /*
+//        * Make sure the page is still
+//        * the selected page.
+//        */
+
+//       if (currentPage < 1 || currentPage > pdf.numPages) {
+//         page.cleanup();
+//         return;
+//       }
+
+//       /*
+//        * ======================================================
+//        * VIEWPORT
+//        * ======================================================
+//        *
+//        * IMPORTANT:
+//        *
+//        * Do NOT call context.setTransform()
+//        * manually.
+//        *
+//        * PDF.js will receive the outputScale
+//        * through `transform`.
+//        */
+
+//       const scale = zoom / 100;
+
+//       const viewport = page.getViewport({
+//         scale,
+//       });
+
+//       /*
+//        * ======================================================
+//        * DEVICE PIXEL RATIO
+//        * ======================================================
+//        */
+
+//       const pixelRatio =
+//         typeof window !== "undefined"
+//           ? Math.max(1, window.devicePixelRatio || 1)
+//           : 1;
+
+//       /*
+//        * ======================================================
+//        * CANVAS DIMENSIONS
+//        * ======================================================
+//        */
+
+//       const canvasWidth = Math.floor(viewport.width * pixelRatio);
+
+//       const canvasHeight = Math.floor(viewport.height * pixelRatio);
+
+//       /*
+//        * Internal canvas resolution.
+//        *
+//        * This keeps the PDF sharp.
+//        */
+
+//       canvas.width = canvasWidth;
+
+//       canvas.height = canvasHeight;
+
+//       /*
+//        * CSS dimensions represent the
+//        * actual visual PDF size.
+//        */
+
+//       canvas.style.width = `${viewport.width}px`;
+
+//       canvas.style.height = `${viewport.height}px`;
+
+//       /*
+//        * ======================================================
+//        * CONTAINER DIMENSIONS
+//        * ======================================================
+//        *
+//        * Explicitly size the page container
+//        * to exactly the same dimensions as
+//        * the PDF canvas.
+//        *
+//        * This is important because the AI
+//        * percentage coordinates are positioned
+//        * against this container.
+//        */
+
+//       if (pageContainerRef.current) {
+//         pageContainerRef.current.style.width = `${viewport.width}px`;
+
+//         pageContainerRef.current.style.height = `${viewport.height}px`;
+//       }
+
+//       /*
+//        * ======================================================
+//        * CONTEXT
+//        * ======================================================
+//        */
+
+//       const context = canvas.getContext("2d");
+
+//       if (!context) {
+//         page.cleanup();
+//         return;
+//       }
+
+//       /*
+//        * Reset any previous transform.
+//        *
+//        * We intentionally do NOT use
+//        * context.setTransform(pixelRatio...)
+//        * here.
+//        */
+
+//       context.setTransform(1, 0, 0, 1, 0, 0);
+
+//       /*
+//        * Clear previous page.
+//        */
+
+//       context.clearRect(0, 0, canvas.width, canvas.height);
+
+//       /*
+//        * ======================================================
+//        * PDF.JS RENDER
+//        * ======================================================
+//        *
+//        * The important part:
+//        *
+//        *   canvas
+//        *   canvasContext
+//        *   viewport
+//        *   transform
+//        *
+//        * PDF.js renders the ORIGINAL PDF.
+//        */
+
+//       const renderTask = page.render({
+//         canvas,
+//         canvasContext: context,
+//         viewport,
+
+//         /*
+//          * Apply device pixel ratio
+//          * through PDF.js instead of
+//          * manually transforming context.
+//          */
+
+//         transform:
+//           pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : undefined,
+//       });
+
+//       renderTaskRef.current = renderTask;
+
+//       await renderTask.promise;
+
+//       /*
+//        * Only clear the task if this is
+//        * still the active render.
+//        */
+
+//       if (renderTaskRef.current === renderTask) {
+//         renderTaskRef.current = null;
+//       }
+
+//       /*
+//        * Release page resources.
+//        */
+
+//       page.cleanup();
+//     } catch (err) {
+//       /*
+//        * Page rendering is cancelled when
+//        * user switches questions/pages.
+//        *
+//        * That is expected.
+//        */
+
+//       if (err instanceof Error && err.name === "RenderingCancelledException") {
+//         return;
+//       }
+
+//       console.error("ANSWER SHEET PAGE RENDER FAILED:", err);
+
+//       setError(
+//         err instanceof Error ? err.message : "Failed to render answer sheet.",
+//       );
+//     }
+//   }, [currentPage, zoom]);
+
+//   /*
+//    * Render whenever page or zoom changes.
+//    */
+
+//   useEffect(() => {
+//     if (!pdfRef.current) {
+//       return;
+//     }
+
+//     void renderPage();
+//   }, [renderPage, totalPages]);
+
+//   /*
+//    * ==========================================================
+//    * SCROLL TO SELECTED ANSWER
+//    * ==========================================================
+//    */
+
+//   useEffect(() => {
+//     if (
+//       !viewerRef.current ||
+//       !pageContainerRef.current ||
+//       regions.length === 0
+//     ) {
+//       return;
+//     }
+
+//     /*
+//      * Find a region on the currently
+//      * displayed page.
+//      */
+
+//     const firstRegion = regions.find((region) => region.page === currentPage);
+
+//     if (!firstRegion) {
+//       return;
+//     }
+
+//     const viewer = viewerRef.current;
+
+//     const page = pageContainerRef.current;
+
+//     /*
+//      * Wait until the PDF canvas has
+//      * been laid out by the browser.
+//      */
+
+//     const frame = window.requestAnimationFrame(() => {
+//       const pageHeight = page.clientHeight;
+
+//       if (pageHeight <= 0) {
+//         return;
+//       }
+
+//       /*
+//        * AI coordinates are percentages
+//        * of the original page.
+//        */
+
+//       const regionTop = (firstRegion.y / 100) * pageHeight;
+
+//       const regionHeight = (firstRegion.height / 100) * pageHeight;
+
+//       /*
+//        * Center the answer region.
+//        */
+
+//       const targetTop = regionTop + regionHeight / 2 - viewer.clientHeight / 2;
+
+//       viewer.scrollTo({
+//         top: Math.max(0, targetTop),
+//         behavior: "smooth",
+//       });
+//     });
+
+//     return () => {
+//       window.cancelAnimationFrame(frame);
+//     };
+//   }, [currentPage, regions, zoom]);
+
+//   /*
+//    * ==========================================================
+//    * PAGE CONTROLS
+//    * ==========================================================
+//    */
+
+//   function previousPage() {
+//     setCurrentPage((page) => Math.max(1, page - 1));
+//   }
+
+//   function nextPage() {
+//     setCurrentPage((page) => Math.min(totalPages, page + 1));
+//   }
+
+//   /*
+//    * ==========================================================
+//    * ZOOM CONTROLS
+//    * ==========================================================
+//    */
+
+//   function zoomIn() {
+//     setZoom((value) => Math.min(160, value + 10));
+//   }
+
+//   function zoomOut() {
+//     setZoom((value) => Math.max(70, value - 10));
+//   }
+
+//   function resetZoom() {
+//     setZoom(100);
+//   }
+
+//   /*
+//    * ==========================================================
+//    * JUMP TO ANSWER
+//    * ==========================================================
+//    */
+
+//   function jumpToAnswer() {
+//     if (pagesWithAnswers.length === 0) {
+//       return;
+//     }
+
+//     setCurrentPage(firstRelevantPage);
+//   }
+
+//   /*
+//    * ==========================================================
+//    * UI
+//    * ==========================================================
+//    */
+
+//   return (
+//     <section className="flex min-h-0 flex-col overflow-hidden bg-[#e8e4db]">
+//       {/* =====================================================
+//           HEADER
+//           ===================================================== */}
+
+//       <div className="flex h-10 shrink-0 items-center justify-between bg-[#343530] px-4 text-white">
+//         <div className="flex min-w-0 items-center gap-2">
+//           <span className="truncate text-[8px] font-medium">
+//             Student Answer Sheet
+//           </span>
+
+//           {regions.length > 0 && (
+//             <span className="hidden rounded-full bg-[#4c4d46] px-2 py-0.5 text-[7px] text-[#d7d5cf] sm:inline">
+//               {regions.length} highlighted{" "}
+//               {regions.length === 1 ? "region" : "regions"}
+//             </span>
+//           )}
+//         </div>
+
+//         <button
+//           type="button"
+//           aria-label="Fullscreen viewer"
+//           className="flex h-7 w-7 items-center justify-center rounded-md text-[#d7d5cf] hover:bg-[#4a4b44]"
+//         >
+//           <Maximize2 size={12} />
+//         </button>
+//       </div>
+
+//       {/* =====================================================
+//           MULTI PAGE ANSWER
+//           ===================================================== */}
+
+//       {pagesWithAnswers.length > 1 && (
+//         <div className="flex items-center justify-between bg-[#3d3e38] px-4 py-1.5">
+//           <span className="text-[7px] text-[#bbb9b2]">
+//             Answer spans multiple pages
+//           </span>
+
+//           <button
+//             type="button"
+//             onClick={jumpToAnswer}
+//             className="flex items-center gap-1 text-[7px] font-semibold text-[#f0b29e]"
+//           >
+//             Jump to answer
+//             <ChevronDown size={9} />
+//           </button>
+//         </div>
+//       )}
+
+//       {/* =====================================================
+//           PDF VIEWER
+//           ===================================================== */}
+
+//       <div ref={viewerRef} className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+//         {/* ===================================================
+//             LOADING
+//             =================================================== */}
+
+//         {loading ? (
+//           <div className="flex h-full min-h-[400px] items-center justify-center">
+//             <p className="text-[9px] text-[#77746c]">Loading answer sheet...</p>
+//           </div>
+//         ) : error ? (
+//           /* =================================================
+//              ERROR
+//              ================================================= */
+//           <div className="flex h-full min-h-[400px] items-center justify-center">
+//             <p className="max-w-[300px] text-center text-[9px] text-[#b56750]">
+//               {error}
+//             </p>
+//           </div>
+//         ) : !answerSheetFile ? (
+//           /* =================================================
+//              NO FILE
+//              ================================================= */
+//           <div className="flex h-full min-h-[400px] items-center justify-center">
+//             <p className="text-[9px] text-[#77746c]">
+//               Answer sheet is not available.
+//             </p>
+//           </div>
+//         ) : (
+//           /* =================================================
+//              ORIGINAL PDF
+//              ================================================= */
+//           <div className="flex min-h-full min-w-full items-start justify-center">
+//             <div
+//               ref={pageContainerRef}
+//               className="relative shrink-0 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.16)]"
+//             >
+//               {/* =================================================
+//                   ORIGINAL PDF CANVAS
+//                   ================================================= */}
+
+//               <canvas ref={canvasRef} className="block select-none" />
+
+//               {/* =================================================
+//                   AI MAPPED REGIONS
+//                   ================================================= */}
+
+//               {regions
+//                 .filter((region) => region.page === currentPage)
+//                 .map((region, index) => (
+//                   <AnswerRegionOverlay
+//                     key={`${region.page}-${region.x}-${region.y}-${region.width}-${region.height}-${index}`}
+//                     region={region}
+//                     label={
+//                       unmatchedAnswer ? "Unmatched" : `Answer ${index + 1}`
+//                     }
+//                     variant={unmatchedAnswer ? "unmatched" : "matched"}
+//                   />
+//                 ))}
+//             </div>
+//           </div>
+//         )}
+//       </div>
+
+//       {/* =====================================================
+//           VIEWER CONTROLS
+//           ===================================================== */}
+
+//       <ViewerControls
+//         currentPage={currentPage}
+//         totalPages={totalPages}
+//         zoom={zoom}
+//         onPreviousPage={previousPage}
+//         onNextPage={nextPage}
+//         onZoomIn={zoomIn}
+//         onZoomOut={zoomOut}
+//         onResetZoom={resetZoom}
+//       />
+//     </section>
+//   );
+// }
+
+// /*
+//  * ============================================================
+//  * ANSWER REGION OVERLAY
+//  * ============================================================
+//  *
+//  * Gemini gives coordinates as percentages:
+//  *
+//  * x
+//  * y
+//  * width
+//  * height
+//  *
+//  * Example:
+//  *
+//  * x      = 10
+//  * y      = 50
+//  * width  = 80
+//  * height = 15
+//  *
+//  * Therefore:
+//  *
+//  * left   = 10%
+//  * top    = 50%
+//  * width  = 80%
+//  * height = 15%
+//  *
+//  * The overlay is positioned relative to
+//  * the ORIGINAL PDF page container.
+//  */
+
+// function AnswerRegionOverlay({
+//   region,
+//   label,
+//   variant,
+// }: {
+//   region: AnswerRegion;
+
+//   label: string;
+
+//   variant: "matched" | "unmatched";
+// }) {
+//   const isUnmatched = variant === "unmatched";
+
+//   return (
+//     <div
+//       className={[
+//         "pointer-events-none absolute rounded-[5px]",
+//         "border-2",
+//         isUnmatched
+//           ? "border-[#d87554] bg-[#eaa789]/25"
+//           : "border-[#75a663] bg-[#a9d294]/25",
+//       ].join(" ")}
+//       style={{
+//         left: `${region.x}%`,
+//         top: `${region.y}%`,
+//         width: `${region.width}%`,
+//         height: `${region.height}%`,
+//       }}
+//     >
+//       <span
+//         className={[
+//           "absolute -left-[2px] -top-[18px]",
+//           "rounded-[4px] px-1.5 py-0.5 text-[6px]",
+//           "font-semibold text-white",
+//           isUnmatched ? "bg-[#d87554]" : "bg-[#75a663]",
+//         ].join(" ")}
+//       >
+//         {label}
+//       </span>
+//     </div>
+//   );
+// }
+
+
+
 "use client";
 
-import { ChevronDown, Maximize2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDown,
+  Maximize2,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -18,35 +959,34 @@ import { ViewerControls } from "./viewer-controls";
  * PDF.JS WORKER
  * ============================================================
  *
- * The ORIGINAL uploaded PDF is rendered directly in the browser.
+ * The ORIGINAL uploaded PDF is rendered directly.
  *
- * We do not convert the answer sheet into PNG.
- * We do not send the answer sheet through Gemini again.
+ * Gemini:
  *
- * Gemini is only responsible for:
+ * PDF
+ *  ↓
+ * extraction
+ *  ↓
+ * mapping
+ *  ↓
+ * coordinates
  *
- *   PDF
- *    ↓
- *   answer extraction
- *    ↓
- *   question mapping
- *    ↓
- *   coordinates
+ * PDF.js:
  *
- * PDF.js is responsible for:
+ * ORIGINAL PDF
+ *  ↓
+ * visual rendering
  *
- *   ORIGINAL PDF
- *    ↓
- *   visual rendering
- *
- * The AI regions are then drawn over the original PDF.
+ * AI regions are rendered over the
+ * original PDF page.
  */
 
 if (typeof window !== "undefined") {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url,
+    ).toString();
 }
 
 /*
@@ -75,16 +1015,8 @@ export function AnswerSheetViewer({
   answerSheetFile,
 }: AnswerSheetViewerProps) {
   /*
-   * Get the AI regions belonging to the
+   * Get the regions belonging to the
    * selected question.
-   *
-   * Normal question:
-   *
-   * question.answerMatch.regions
-   *
-   * Unmatched answer:
-   *
-   * unmatchedAnswer.regions
    */
 
   const regions = useMemo<AnswerRegion[]>(() => {
@@ -93,15 +1025,18 @@ export function AnswerSheetViewer({
     }
 
     return question.answerMatch?.regions ?? [];
-  }, [question.answerMatch?.regions, unmatchedAnswer]);
+  }, [
+    question.answerMatch?.regions,
+    unmatchedAnswer,
+  ]);
 
   /*
-   * Recreate ViewerContent whenever the
-   * selected question changes.
+   * Changing the key completely resets the
+   * viewer when the user selects another
+   * question.
    *
-   * This allows currentPage to initialize
-   * from the first AI region without
-   * calling setState() inside an effect.
+   * This means currentPage can safely
+   * initialize from the selected answer.
    */
 
   return (
@@ -137,19 +1072,35 @@ function ViewerContent({
    * ==========================================================
    */
 
-  const viewerRef = useRef<HTMLDivElement>(null);
+  const viewerRef =
+    useRef<HTMLDivElement>(null);
 
-  const pageContainerRef = useRef<HTMLDivElement>(null);
+  const pageContainerRef =
+    useRef<HTMLDivElement>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef =
+    useRef<HTMLCanvasElement>(null);
 
-  const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  const pdfRef =
+    useRef<pdfjsLib.PDFDocumentProxy | null>(
+      null,
+    );
 
-  const loadingTaskRef = useRef<ReturnType<typeof pdfjsLib.getDocument> | null>(
-    null,
-  );
+  const loadingTaskRef =
+    useRef<ReturnType<
+      typeof pdfjsLib.getDocument
+    > | null>(null);
 
-  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
+  const renderTaskRef =
+    useRef<pdfjsLib.RenderTask | null>(null);
+
+  /*
+   * Prevent multiple resize renders
+   * from happening simultaneously.
+   */
+
+  const resizeObserverRef =
+    useRef<ResizeObserver | null>(null);
 
   /*
    * ==========================================================
@@ -157,20 +1108,28 @@ function ViewerContent({
    * ==========================================================
    */
 
+  const [currentPage, setCurrentPage] =
+    useState(regions[0]?.page ?? 1);
+
+  const [totalPages, setTotalPages] =
+    useState(0);
+
   /*
-   * The selected question's first region
-   * determines the initial page.
+   * Zoom is now relative to FIT-TO-WIDTH.
+   *
+   * 100 = fit width
+   * 110 = 10% larger than fit width
+   * 150 = 50% larger than fit width
    */
 
-  const [currentPage, setCurrentPage] = useState(regions[0]?.page ?? 1);
+  const [zoom, setZoom] =
+    useState(100);
 
-  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] =
+    useState(Boolean(answerSheetFile));
 
-  const [zoom, setZoom] = useState(100);
-
-  const [loading, setLoading] = useState(Boolean(answerSheetFile));
-
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] =
+    useState<string | null>(null);
 
   /*
    * ==========================================================
@@ -179,16 +1138,23 @@ function ViewerContent({
    */
 
   const pagesWithAnswers = useMemo(() => {
-    return Array.from(new Set(regions.map((region) => region.page))).sort(
+    return Array.from(
+      new Set(
+        regions.map(
+          (region) => region.page,
+        ),
+      ),
+    ).sort(
       (a, b) => a - b,
     );
   }, [regions]);
 
-  const firstRelevantPage = pagesWithAnswers[0] ?? 1;
+  const firstRelevantPage =
+    pagesWithAnswers[0] ?? 1;
 
   /*
    * ==========================================================
-   * LOAD ORIGINAL ANSWER SHEET
+   * LOAD ORIGINAL PDF
    * ==========================================================
    */
 
@@ -206,7 +1172,7 @@ function ViewerContent({
         setError(null);
 
         /*
-         * Cancel any previous render.
+         * Cancel an active render.
          */
 
         if (renderTaskRef.current) {
@@ -234,12 +1200,7 @@ function ViewerContent({
         }
 
         /*
-         * Clean previous PDF.
-         *
-         * Do NOT call pdf.destroy().
-         *
-         * Your installed PDFDocumentProxy
-         * exposes cleanup().
+         * Cleanup previous PDF.
          */
 
         if (pdfRef.current) {
@@ -253,16 +1214,11 @@ function ViewerContent({
         }
 
         /*
-         * Read the ORIGINAL uploaded PDF.
+         * Read the ORIGINAL uploaded file.
          */
-
-        const file = answerSheetFile;
-
-        if (!file) {
-          return;
-        }
-
-        const arrayBuffer = await file.arrayBuffer();
+      
+        const arrayBuffer =
+          await answerSheetFile!.arrayBuffer();
 
         if (cancelled) {
           return;
@@ -272,13 +1228,18 @@ function ViewerContent({
          * Load PDF directly with PDF.js.
          */
 
-        const loadingTask = pdfjsLib.getDocument({
-          data: new Uint8Array(arrayBuffer),
-        });
+        const loadingTask =
+          pdfjsLib.getDocument({
+            data: new Uint8Array(
+              arrayBuffer,
+            ),
+          });
 
-        loadingTaskRef.current = loadingTask;
+        loadingTaskRef.current =
+          loadingTask;
 
-        const pdf = await loadingTask.promise;
+        const pdf =
+          await loadingTask.promise;
 
         if (cancelled) {
           try {
@@ -290,10 +1251,6 @@ function ViewerContent({
           return;
         }
 
-        /*
-         * Store loaded PDF.
-         */
-
         pdfRef.current = pdf;
 
         setTotalPages(pdf.numPages);
@@ -302,10 +1259,15 @@ function ViewerContent({
           return;
         }
 
-        console.error("ANSWER SHEET PDF LOAD FAILED:", err);
+        console.error(
+          "ANSWER SHEET PDF LOAD FAILED:",
+          err,
+        );
 
         setError(
-          err instanceof Error ? err.message : "Failed to load answer sheet.",
+          err instanceof Error
+            ? err.message
+            : "Failed to load answer sheet.",
         );
       } finally {
         if (!cancelled) {
@@ -315,10 +1277,6 @@ function ViewerContent({
     }
 
     void loadPdf();
-
-    /*
-     * Cleanup.
-     */
 
     return () => {
       cancelled = true;
@@ -342,9 +1300,11 @@ function ViewerContent({
        */
 
       if (loadingTaskRef.current) {
-        void loadingTaskRef.current.destroy().catch(() => {
-          // Ignore cleanup errors.
-        });
+        void loadingTaskRef.current
+          .destroy()
+          .catch(() => {
+            // Ignore cleanup errors.
+          });
 
         loadingTaskRef.current = null;
       }
@@ -367,229 +1327,346 @@ function ViewerContent({
 
   /*
    * ==========================================================
+   * GET FIT SCALE
+   * ==========================================================
+   *
+   * The important change.
+   *
+   * Previously:
+   *
+   *     scale = zoom / 100
+   *
+   * That means a PDF page is rendered using its raw
+   * PDF dimensions.
+   *
+   * Now:
+   *
+   *     available panel width
+   *             ↓
+   *        calculate fit scale
+   *             ↓
+   *        apply user zoom
+   *
+   * This keeps the PDF inside the right panel.
+   */
+
+  const getFitScale =
+    useCallback(
+      (
+        page: pdfjsLib.PDFPageProxy,
+      ) => {
+        const viewer =
+          viewerRef.current;
+
+        if (!viewer) {
+          return 1;
+        }
+
+        /*
+         * Viewer has padding.
+         *
+         * We use clientWidth rather than
+         * scrollWidth so the PDF never uses
+         * the already-overflowing width.
+         */
+
+        const horizontalPadding =
+          window.innerWidth >= 640
+            ? 48
+            : 32;
+
+        const availableWidth =
+          Math.max(
+            viewer.clientWidth -
+              horizontalPadding,
+            100,
+          );
+
+        const unscaledViewport =
+          page.getViewport({
+            scale: 1,
+          });
+
+        const fitScale =
+          availableWidth /
+          unscaledViewport.width;
+
+        /*
+         * Never allow a ridiculous scale.
+         */
+
+        return Math.min(
+          Math.max(fitScale, 0.25),
+          3,
+        );
+      },
+      [],
+    );
+
+  /*
+   * ==========================================================
    * RENDER PDF PAGE
    * ==========================================================
    */
 
-  const renderPage = useCallback(async () => {
-    const pdf = pdfRef.current;
+  const renderPage =
+    useCallback(async () => {
+      const pdf =
+        pdfRef.current;
 
-    const canvas = canvasRef.current;
+      const canvas =
+        canvasRef.current;
 
-    if (!pdf || !canvas || currentPage < 1 || currentPage > pdf.numPages) {
-      return;
-    }
+      const viewer =
+        viewerRef.current;
 
-    try {
-      /*
-       * Cancel previous render.
-       */
-
-      if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {
-          // Ignore cancellation.
-        }
-
-        renderTaskRef.current = null;
-      }
-
-      /*
-       * Get requested PDF page.
-       */
-
-      const page = await pdf.getPage(currentPage);
-
-      /*
-       * Make sure the page is still
-       * the selected page.
-       */
-
-      if (currentPage < 1 || currentPage > pdf.numPages) {
-        page.cleanup();
+      if (
+        !pdf ||
+        !canvas ||
+        !viewer ||
+        currentPage < 1 ||
+        currentPage > pdf.numPages
+      ) {
         return;
       }
 
-      /*
-       * ======================================================
-       * VIEWPORT
-       * ======================================================
-       *
-       * IMPORTANT:
-       *
-       * Do NOT call context.setTransform()
-       * manually.
-       *
-       * PDF.js will receive the outputScale
-       * through `transform`.
-       */
-
-      const scale = zoom / 100;
-
-      const viewport = page.getViewport({
-        scale,
-      });
-
-      /*
-       * ======================================================
-       * DEVICE PIXEL RATIO
-       * ======================================================
-       */
-
-      const pixelRatio =
-        typeof window !== "undefined"
-          ? Math.max(1, window.devicePixelRatio || 1)
-          : 1;
-
-      /*
-       * ======================================================
-       * CANVAS DIMENSIONS
-       * ======================================================
-       */
-
-      const canvasWidth = Math.floor(viewport.width * pixelRatio);
-
-      const canvasHeight = Math.floor(viewport.height * pixelRatio);
-
-      /*
-       * Internal canvas resolution.
-       *
-       * This keeps the PDF sharp.
-       */
-
-      canvas.width = canvasWidth;
-
-      canvas.height = canvasHeight;
-
-      /*
-       * CSS dimensions represent the
-       * actual visual PDF size.
-       */
-
-      canvas.style.width = `${viewport.width}px`;
-
-      canvas.style.height = `${viewport.height}px`;
-
-      /*
-       * ======================================================
-       * CONTAINER DIMENSIONS
-       * ======================================================
-       *
-       * Explicitly size the page container
-       * to exactly the same dimensions as
-       * the PDF canvas.
-       *
-       * This is important because the AI
-       * percentage coordinates are positioned
-       * against this container.
-       */
-
-      if (pageContainerRef.current) {
-        pageContainerRef.current.style.width = `${viewport.width}px`;
-
-        pageContainerRef.current.style.height = `${viewport.height}px`;
-      }
-
-      /*
-       * ======================================================
-       * CONTEXT
-       * ======================================================
-       */
-
-      const context = canvas.getContext("2d");
-
-      if (!context) {
-        page.cleanup();
-        return;
-      }
-
-      /*
-       * Reset any previous transform.
-       *
-       * We intentionally do NOT use
-       * context.setTransform(pixelRatio...)
-       * here.
-       */
-
-      context.setTransform(1, 0, 0, 1, 0, 0);
-
-      /*
-       * Clear previous page.
-       */
-
-      context.clearRect(0, 0, canvas.width, canvas.height);
-
-      /*
-       * ======================================================
-       * PDF.JS RENDER
-       * ======================================================
-       *
-       * The important part:
-       *
-       *   canvas
-       *   canvasContext
-       *   viewport
-       *   transform
-       *
-       * PDF.js renders the ORIGINAL PDF.
-       */
-
-      const renderTask = page.render({
-        canvas,
-        canvasContext: context,
-        viewport,
-
+      try {
         /*
-         * Apply device pixel ratio
-         * through PDF.js instead of
-         * manually transforming context.
+         * Cancel previous render.
          */
 
-        transform:
-          pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : undefined,
-      });
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch {
+            // Ignore cancellation.
+          }
 
-      renderTaskRef.current = renderTask;
+          renderTaskRef.current = null;
+        }
 
-      await renderTask.promise;
+        /*
+         * Get selected page.
+         */
 
-      /*
-       * Only clear the task if this is
-       * still the active render.
-       */
+        const page =
+          await pdf.getPage(
+            currentPage,
+          );
 
-      if (renderTaskRef.current === renderTask) {
-        renderTaskRef.current = null;
+        if (
+          currentPage < 1 ||
+          currentPage > pdf.numPages
+        ) {
+          page.cleanup();
+          return;
+        }
+
+        /*
+         * ======================================================
+         * CALCULATE RESPONSIVE SCALE
+         * ======================================================
+         */
+
+        const fitScale =
+          getFitScale(page);
+
+        const finalScale =
+          fitScale *
+          (zoom / 100);
+
+        const viewport =
+          page.getViewport({
+            scale: finalScale,
+          });
+
+        /*
+         * ======================================================
+         * DEVICE PIXEL RATIO
+         * ======================================================
+         */
+
+        const pixelRatio =
+          typeof window !== "undefined"
+            ? Math.min(
+                Math.max(
+                  window.devicePixelRatio ||
+                    1,
+                  1,
+                ),
+                2,
+              )
+            : 1;
+
+        /*
+         * ======================================================
+         * CANVAS SIZE
+         * ======================================================
+         */
+
+        const canvasWidth =
+          Math.floor(
+            viewport.width *
+              pixelRatio,
+          );
+
+        const canvasHeight =
+          Math.floor(
+            viewport.height *
+              pixelRatio,
+          );
+
+        /*
+         * Internal canvas resolution.
+         *
+         * Keeps the PDF sharp.
+         */
+
+        canvas.width =
+          canvasWidth;
+
+        canvas.height =
+          canvasHeight;
+
+        /*
+         * CSS size represents the
+         * visual PDF size.
+         */
+
+        canvas.style.width =
+          `${viewport.width}px`;
+
+        canvas.style.height =
+          `${viewport.height}px`;
+
+        /*
+         * ======================================================
+         * PAGE CONTAINER
+         * ======================================================
+         *
+         * The overlay uses this exact
+         * container as its coordinate system.
+         */
+
+        const pageContainer =
+          pageContainerRef.current;
+
+        if (pageContainer) {
+          pageContainer.style.width =
+            `${viewport.width}px`;
+
+          pageContainer.style.height =
+            `${viewport.height}px`;
+        }
+
+        /*
+         * ======================================================
+         * CANVAS CONTEXT
+         * ======================================================
+         */
+
+        const context =
+          canvas.getContext("2d");
+
+        if (!context) {
+          page.cleanup();
+          return;
+        }
+
+        /*
+         * Reset context.
+         */
+
+        context.setTransform(
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+        );
+
+        context.clearRect(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+
+        /*
+         * ======================================================
+         * PDF.JS RENDER
+         * ======================================================
+         */
+
+        const renderTask =
+          page.render({
+            canvas,
+            canvasContext: context,
+            viewport,
+
+            transform:
+              pixelRatio !== 1
+                ? [
+                    pixelRatio,
+                    0,
+                    0,
+                    pixelRatio,
+                    0,
+                    0,
+                  ]
+                : undefined,
+          });
+
+        renderTaskRef.current =
+          renderTask;
+
+        await renderTask.promise;
+
+        if (
+          renderTaskRef.current ===
+          renderTask
+        ) {
+          renderTaskRef.current =
+            null;
+        }
+
+        page.cleanup();
+      } catch (err) {
+        /*
+         * PDF.js throws this when the
+         * previous render is cancelled.
+         */
+
+        if (
+          err instanceof Error &&
+          err.name ===
+            "RenderingCancelledException"
+        ) {
+          return;
+        }
+
+        console.error(
+          "ANSWER SHEET PAGE RENDER FAILED:",
+          err,
+        );
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to render answer sheet.",
+        );
       }
-
-      /*
-       * Release page resources.
-       */
-
-      page.cleanup();
-    } catch (err) {
-      /*
-       * Page rendering is cancelled when
-       * user switches questions/pages.
-       *
-       * That is expected.
-       */
-
-      if (err instanceof Error && err.name === "RenderingCancelledException") {
-        return;
-      }
-
-      console.error("ANSWER SHEET PAGE RENDER FAILED:", err);
-
-      setError(
-        err instanceof Error ? err.message : "Failed to render answer sheet.",
-      );
-    }
-  }, [currentPage, zoom]);
+    }, [
+      currentPage,
+      zoom,
+      getFitScale,
+    ]);
 
   /*
-   * Render whenever page or zoom changes.
+   * ==========================================================
+   * RENDER WHEN PAGE / ZOOM CHANGES
+   * ==========================================================
    */
 
   useEffect(() => {
@@ -598,7 +1675,54 @@ function ViewerContent({
     }
 
     void renderPage();
-  }, [renderPage, totalPages]);
+  }, [
+    renderPage,
+    totalPages,
+  ]);
+
+  /*
+   * ==========================================================
+   * RESPONSIVE RENDERING
+   * ==========================================================
+   *
+   * If the assessment panel becomes wider
+   * or narrower, recalculate PDF width.
+   */
+
+  useEffect(() => {
+    const viewer =
+      viewerRef.current;
+
+    if (!viewer) {
+      return;
+    }
+
+    const observer =
+      new ResizeObserver(() => {
+        /*
+         * Small delay allows the browser to
+         * finish layout before calculating
+         * available width.
+         */
+
+        window.requestAnimationFrame(() => {
+          if (pdfRef.current) {
+            void renderPage();
+          }
+        });
+      });
+
+    resizeObserverRef.current =
+      observer;
+
+    observer.observe(viewer);
+
+    return () => {
+      observer.disconnect();
+      resizeObserverRef.current =
+        null;
+    };
+  }, [renderPage]);
 
   /*
    * ==========================================================
@@ -607,66 +1731,88 @@ function ViewerContent({
    */
 
   useEffect(() => {
+    const viewer =
+      viewerRef.current;
+
+    const page =
+      pageContainerRef.current;
+
     if (
-      !viewerRef.current ||
-      !pageContainerRef.current ||
+      !viewer ||
+      !page ||
       regions.length === 0
     ) {
       return;
     }
 
     /*
-     * Find a region on the currently
-     * displayed page.
+     * Find the first region on the
+     * currently displayed page.
      */
 
-    const firstRegion = regions.find((region) => region.page === currentPage);
+    const firstRegion =
+      regions.find(
+        (region) =>
+          region.page ===
+          currentPage,
+      );
 
     if (!firstRegion) {
       return;
     }
 
-    const viewer = viewerRef.current;
+    const frame =
+      window.requestAnimationFrame(
+        () => {
+          const pageHeight =
+            page.clientHeight;
 
-    const page = pageContainerRef.current;
+          if (pageHeight <= 0) {
+            return;
+          }
 
-    /*
-     * Wait until the PDF canvas has
-     * been laid out by the browser.
-     */
+          /*
+           * AI coordinates are percentages
+           * of the ORIGINAL PDF page.
+           */
 
-    const frame = window.requestAnimationFrame(() => {
-      const pageHeight = page.clientHeight;
+          const regionTop =
+            (firstRegion.y / 100) *
+            pageHeight;
 
-      if (pageHeight <= 0) {
-        return;
-      }
+          const regionHeight =
+            (firstRegion.height / 100) *
+            pageHeight;
 
-      /*
-       * AI coordinates are percentages
-       * of the original page.
-       */
+          /*
+           * Center selected answer.
+           */
 
-      const regionTop = (firstRegion.y / 100) * pageHeight;
+          const targetTop =
+            regionTop +
+            regionHeight / 2 -
+            viewer.clientHeight / 2;
 
-      const regionHeight = (firstRegion.height / 100) * pageHeight;
-
-      /*
-       * Center the answer region.
-       */
-
-      const targetTop = regionTop + regionHeight / 2 - viewer.clientHeight / 2;
-
-      viewer.scrollTo({
-        top: Math.max(0, targetTop),
-        behavior: "smooth",
-      });
-    });
+          viewer.scrollTo({
+            top: Math.max(
+              0,
+              targetTop,
+            ),
+            behavior: "smooth",
+          });
+        },
+      );
 
     return () => {
-      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(
+        frame,
+      );
     };
-  }, [currentPage, regions, zoom]);
+  }, [
+    currentPage,
+    regions,
+    zoom,
+  ]);
 
   /*
    * ==========================================================
@@ -675,11 +1821,23 @@ function ViewerContent({
    */
 
   function previousPage() {
-    setCurrentPage((page) => Math.max(1, page - 1));
+    setCurrentPage(
+      (page) =>
+        Math.max(
+          1,
+          page - 1,
+        ),
+    );
   }
 
   function nextPage() {
-    setCurrentPage((page) => Math.min(totalPages, page + 1));
+    setCurrentPage(
+      (page) =>
+        Math.min(
+          totalPages,
+          page + 1,
+        ),
+    );
   }
 
   /*
@@ -689,11 +1847,23 @@ function ViewerContent({
    */
 
   function zoomIn() {
-    setZoom((value) => Math.min(160, value + 10));
+    setZoom(
+      (value) =>
+        Math.min(
+          160,
+          value + 10,
+        ),
+    );
   }
 
   function zoomOut() {
-    setZoom((value) => Math.max(70, value - 10));
+    setZoom(
+      (value) =>
+        Math.max(
+          70,
+          value - 10,
+        ),
+    );
   }
 
   function resetZoom() {
@@ -707,11 +1877,16 @@ function ViewerContent({
    */
 
   function jumpToAnswer() {
-    if (pagesWithAnswers.length === 0) {
+    if (
+      pagesWithAnswers.length ===
+      0
+    ) {
       return;
     }
 
-    setCurrentPage(firstRelevantPage);
+    setCurrentPage(
+      firstRelevantPage,
+    );
   }
 
   /*
@@ -721,21 +1896,58 @@ function ViewerContent({
    */
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden bg-[#e8e4db]">
+    <section
+      className="
+        flex
+        min-h-0
+        h-full
+        w-full
+        min-w-0
+        flex-col
+        overflow-hidden
+        bg-[#e8e4db]
+      "
+    >
       {/* =====================================================
           HEADER
           ===================================================== */}
 
-      <div className="flex h-10 shrink-0 items-center justify-between bg-[#343530] px-4 text-white">
+      <div
+        className="
+          flex
+          h-10
+          min-h-10
+          shrink-0
+          items-center
+          justify-between
+          bg-[#343530]
+          px-4
+          text-white
+        "
+      >
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[8px] font-medium">
             Student Answer Sheet
           </span>
 
           {regions.length > 0 && (
-            <span className="hidden rounded-full bg-[#4c4d46] px-2 py-0.5 text-[7px] text-[#d7d5cf] sm:inline">
-              {regions.length} highlighted{" "}
-              {regions.length === 1 ? "region" : "regions"}
+            <span
+              className="
+                hidden
+                rounded-full
+                bg-[#4c4d46]
+                px-2
+                py-0.5
+                text-[7px]
+                text-[#d7d5cf]
+                sm:inline
+              "
+            >
+              {regions.length}{" "}
+              highlighted{" "}
+              {regions.length === 1
+                ? "region"
+                : "regions"}
             </span>
           )}
         </div>
@@ -743,7 +1955,17 @@ function ViewerContent({
         <button
           type="button"
           aria-label="Fullscreen viewer"
-          className="flex h-7 w-7 items-center justify-center rounded-md text-[#d7d5cf] hover:bg-[#4a4b44]"
+          className="
+            flex
+            h-7
+            w-7
+            shrink-0
+            items-center
+            justify-center
+            rounded-md
+            text-[#d7d5cf]
+            hover:bg-[#4a4b44]
+          "
         >
           <Maximize2 size={12} />
         </button>
@@ -753,16 +1975,38 @@ function ViewerContent({
           MULTI PAGE ANSWER
           ===================================================== */}
 
-      {pagesWithAnswers.length > 1 && (
-        <div className="flex items-center justify-between bg-[#3d3e38] px-4 py-1.5">
+      {pagesWithAnswers.length >
+        1 && (
+        <div
+          className="
+            flex
+            h-8
+            min-h-8
+            shrink-0
+            items-center
+            justify-between
+            bg-[#3d3e38]
+            px-4
+          "
+        >
           <span className="text-[7px] text-[#bbb9b2]">
-            Answer spans multiple pages
+            Answer spans multiple
+            pages
           </span>
 
           <button
             type="button"
-            onClick={jumpToAnswer}
-            className="flex items-center gap-1 text-[7px] font-semibold text-[#f0b29e]"
+            onClick={
+              jumpToAnswer
+            }
+            className="
+              flex
+              items-center
+              gap-1
+              text-[7px]
+              font-semibold
+              text-[#f0b29e]
+            "
           >
             Jump to answer
             <ChevronDown size={9} />
@@ -774,20 +2018,51 @@ function ViewerContent({
           PDF VIEWER
           ===================================================== */}
 
-      <div ref={viewerRef} className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div
+        ref={viewerRef}
+        className="
+          relative
+          min-h-0
+          min-w-0
+          flex-1
+          overflow-auto
+          overscroll-contain
+          p-4
+          sm:p-6
+        "
+      >
         {/* ===================================================
             LOADING
             =================================================== */}
 
         {loading ? (
-          <div className="flex h-full min-h-[400px] items-center justify-center">
-            <p className="text-[9px] text-[#77746c]">Loading answer sheet...</p>
+          <div
+            className="
+              flex
+              h-full
+              min-h-[300px]
+              items-center
+              justify-center
+            "
+          >
+            <p className="text-[9px] text-[#77746c]">
+              Loading answer
+              sheet...
+            </p>
           </div>
         ) : error ? (
           /* =================================================
              ERROR
              ================================================= */
-          <div className="flex h-full min-h-[400px] items-center justify-center">
+          <div
+            className="
+              flex
+              h-full
+              min-h-[300px]
+              items-center
+              justify-center
+            "
+          >
             <p className="max-w-[300px] text-center text-[9px] text-[#b56750]">
               {error}
             </p>
@@ -796,42 +2071,89 @@ function ViewerContent({
           /* =================================================
              NO FILE
              ================================================= */
-          <div className="flex h-full min-h-[400px] items-center justify-center">
+          <div
+            className="
+              flex
+              h-full
+              min-h-[300px]
+              items-center
+              justify-center
+            "
+          >
             <p className="text-[9px] text-[#77746c]">
-              Answer sheet is not available.
+              Answer sheet is not
+              available.
             </p>
           </div>
         ) : (
           /* =================================================
              ORIGINAL PDF
              ================================================= */
-          <div className="flex min-h-full min-w-full items-start justify-center">
+
+          <div
+            className="
+              flex
+              min-h-full
+              min-w-full
+              items-start
+              justify-center
+            "
+          >
             <div
               ref={pageContainerRef}
-              className="relative shrink-0 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.16)]"
+              className="
+                relative
+                shrink-0
+                overflow-hidden
+                bg-white
+                shadow-[0_8px_30px_rgba(0,0,0,0.16)]
+              "
             >
               {/* =================================================
                   ORIGINAL PDF CANVAS
                   ================================================= */}
 
-              <canvas ref={canvasRef} className="block select-none" />
+              <canvas
+                ref={canvasRef}
+                className="
+                  block
+                  select-none
+                "
+              />
 
               {/* =================================================
                   AI MAPPED REGIONS
                   ================================================= */}
 
               {regions
-                .filter((region) => region.page === currentPage)
-                .map((region, index) => (
-                  <AnswerRegionOverlay
-                    key={`${region.page}-${region.x}-${region.y}-${region.width}-${region.height}-${index}`}
-                    region={region}
-                    label={
-                      unmatchedAnswer ? "Unmatched" : `Answer ${index + 1}`
-                    }
-                    variant={unmatchedAnswer ? "unmatched" : "matched"}
-                  />
-                ))}
+                .filter(
+                  (region) =>
+                    region.page ===
+                    currentPage,
+                )
+                .map(
+                  (
+                    region,
+                    index,
+                  ) => (
+                    <AnswerRegionOverlay
+                      key={`${region.page}-${region.x}-${region.y}-${region.width}-${region.height}-${index}`}
+                      region={region}
+                      label={
+                        unmatchedAnswer
+                          ? "Unmatched"
+                          : `Answer ${
+                              index + 1
+                            }`
+                      }
+                      variant={
+                        unmatchedAnswer
+                          ? "unmatched"
+                          : "matched"
+                      }
+                    />
+                  ),
+                )}
             </div>
           </div>
         )}
@@ -841,16 +2163,32 @@ function ViewerContent({
           VIEWER CONTROLS
           ===================================================== */}
 
-      <ViewerControls
-        currentPage={currentPage}
-        totalPages={totalPages}
-        zoom={zoom}
-        onPreviousPage={previousPage}
-        onNextPage={nextPage}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        onResetZoom={resetZoom}
-      />
+      <div className="relative z-10 shrink-0">
+        <ViewerControls
+          currentPage={
+            currentPage
+          }
+          totalPages={
+            totalPages
+          }
+          zoom={zoom}
+          onPreviousPage={
+            previousPage
+          }
+          onNextPage={
+            nextPage
+          }
+          onZoomIn={
+            zoomIn
+          }
+          onZoomOut={
+            zoomOut
+          }
+          onResetZoom={
+            resetZoom
+          }
+        />
+      </div>
     </section>
   );
 }
@@ -862,27 +2200,14 @@ function ViewerContent({
  *
  * Gemini gives coordinates as percentages:
  *
- * x
- * y
- * width
- * height
+ * x      = left
+ * y      = top
+ * width  = width
+ * height = height
  *
- * Example:
- *
- * x      = 10
- * y      = 50
- * width  = 80
- * height = 15
- *
- * Therefore:
- *
- * left   = 10%
- * top    = 50%
- * width  = 80%
- * height = 15%
- *
- * The overlay is positioned relative to
- * the ORIGINAL PDF page container.
+ * Because the overlay is positioned against
+ * pageContainerRef, it automatically scales
+ * together with the PDF canvas.
  */
 
 function AnswerRegionOverlay({
@@ -894,14 +2219,18 @@ function AnswerRegionOverlay({
 
   label: string;
 
-  variant: "matched" | "unmatched";
+  variant:
+    | "matched"
+    | "unmatched";
 }) {
-  const isUnmatched = variant === "unmatched";
+  const isUnmatched =
+    variant === "unmatched";
 
   return (
     <div
       className={[
-        "pointer-events-none absolute rounded-[5px]",
+        "pointer-events-none absolute",
+        "rounded-[5px]",
         "border-2",
         isUnmatched
           ? "border-[#d87554] bg-[#eaa789]/25"
@@ -916,10 +2245,18 @@ function AnswerRegionOverlay({
     >
       <span
         className={[
-          "absolute -left-[2px] -top-[18px]",
-          "rounded-[4px] px-1.5 py-0.5 text-[6px]",
-          "font-semibold text-white",
-          isUnmatched ? "bg-[#d87554]" : "bg-[#75a663]",
+          "absolute",
+          "-left-[2px]",
+          "-top-[18px]",
+          "rounded-[4px]",
+          "px-1.5",
+          "py-0.5",
+          "text-[6px]",
+          "font-semibold",
+          "text-white",
+          isUnmatched
+            ? "bg-[#d87554]"
+            : "bg-[#75a663]",
         ].join(" ")}
       >
         {label}
