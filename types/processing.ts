@@ -1,6 +1,13 @@
-import type { ExtractedQuestion } from "./extraction";
-import type { ExtractedAnswer } from "./extraction";
+import type {
+  ExtractedQuestion,
+  ExtractedAnswer,
+} from "./extraction";
+
 import type { AnswerMapping } from "./mapping";
+
+import type {
+  GradingResult,
+} from "./grading";
 
 export type ProcessingStepStatus =
   | "pending"
@@ -19,4 +26,7 @@ export type AssessmentProcessingResult = {
   questions: ExtractedQuestion[];
   answers: ExtractedAnswer[];
   mappings: AnswerMapping[];
+  grading: GradingResult[];
 };
+
+

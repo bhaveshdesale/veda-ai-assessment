@@ -1,92 +1,52 @@
 import { NextResponse } from "next/server";
 
-import {
-  extractAnswers,
-} from "@/lib/ai/extract-answers";
+import { extractQuestions } from "@/lib/ai/extract-questions";
+import { extractAnswers } from "@/lib/ai/extract-answers";
+import { gradeAnswers } from "@/lib/ai/grade-answers";
 
-import {
-  extractQuestions,
-} from "@/lib/ai/extract-questions";
-
-import {
-  mapAnswers,
-} from "@/lib/mapping/map-answers";
-
-export const runtime = "nodejs";
+import type { ExtractedAnswer } from "@/types/extraction";
 
 export async function POST(
   request: Request,
 ) {
   try {
-    console.log(
-      "ASSESSMENT PROCESSING ROUTE HIT",
-    );
-
     const formData =
       await request.formData();
 
     const questionPaper =
-      formData.get(
-        "questionPaper",
-      );
+      formData.get("questionPaper");
 
     const answerSheet =
-      formData.get(
-        "answerSheet",
-      );
+      formData.get("answerSheet");
 
-    if (
-      !(questionPaper instanceof File)
-    ) {
+    if (!(questionPaper instanceof File)) {
       return NextResponse.json(
         {
           success: false,
           error:
             "Question paper is required.",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
-    if (
-      !(answerSheet instanceof File)
-    ) {
+    if (!(answerSheet instanceof File)) {
       return NextResponse.json(
         {
           success: false,
           error:
             "Answer sheet is required.",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
     console.log(
-      "Question paper:",
-      {
-        name: questionPaper.name,
-        type: questionPaper.type,
-        size: questionPaper.size,
-      },
-    );
-
-    console.log(
-      "Answer sheet:",
-      {
-        name: answerSheet.name,
-        type: answerSheet.type,
-        size: answerSheet.size,
-      },
+      "Starting assessment processing...",
     );
 
     /*
-     * STEP 1
-     *
-     * Extract questions.
+     * 1. Extract questions
      */
     console.log(
       "Extracting questions...",
@@ -97,14 +57,8 @@ export async function POST(
         questionPaper,
       );
 
-    console.log(
-      `Extracted ${questionResult.questions.length} questions.`,
-    );
-
     /*
-     * STEP 2
-     *
-     * Extract student answers.
+     * 2. Extract student answers
      */
     console.log(
       "Extracting answers...",
@@ -115,35 +69,121 @@ export async function POST(
         answerSheet,
       );
 
-    console.log(
-      `Extracted ${answerResult.answers.length} answers.`,
-    );
+    /*
+     * 3. Match answers to questions
+     *
+     * For now we use the question number
+     * returned by Gemini.
+     *
+     * The dedicated mapping algorithm can
+     * replace this later.
+     */
+    const answerByQuestion =
+      new Map<string, ExtractedAnswer>();
+
+    for (const answer of answerResult.answers) {
+      if (
+        answer.questionNumber &&
+        !answerByQuestion.has(
+          answer.questionNumber,
+        )
+      ) {
+        answerByQuestion.set(
+          answer.questionNumber,
+          answer,
+        );
+      }
+    }
 
     /*
-     * STEP 3
-     *
-     * Map answers to questions.
+     * 4. Prepare questions for grading
      */
-    console.log(
-      "Mapping answers...",
-    );
+    const questionsToGrade =
+      questionResult.questions.map(
+        (question) => {
+          const answer =
+            answerByQuestion.get(
+              question.number,
+            );
 
-    const mappings =
-      mapAnswers(
-        questionResult.questions,
-        answerResult.answers,
+          return {
+            questionId: question.id,
+            question: question.text,
+            answer:
+              answer?.text ?? null,
+            maxMarks:
+              question.marks ?? 0,
+          };
+        },
       );
 
+    /*
+     * 5. Grade answers with Gemini
+     */
     console.log(
-      `Created ${mappings.length} mappings.`,
+      "Grading student answers...",
     );
 
+    const gradingResult =
+      await gradeAnswers(
+        questionsToGrade,
+      );
+
     /*
-     * STEP 4
+     * 6. Create mappings
      *
-     * Return the complete assessment
-     * processing result.
+     * This is the initial question-number
+     * mapping. We will replace this with
+     * the full mapping system later.
      */
+    const mappings =
+      questionResult.questions.map(
+        (question) => {
+          const answer =
+            answerByQuestion.get(
+              question.number,
+            );
+
+          const grading =
+            gradingResult.results.find(
+              (item) =>
+                item.questionId ===
+                question.id,
+            );
+
+          return {
+            questionId: question.id,
+
+            answerId:
+              answer?.id ?? null,
+
+            confidence:
+              answer?.confidence ??
+              grading?.confidence ??
+              0,
+
+            method:
+              answer
+                ? "question-number"
+                : "combined",
+
+            regions:
+              answer?.regions ?? [],
+
+            status: answer
+              ? "mapped"
+              : "unanswered",
+          };
+        },
+      );
+
+    /*
+     * 7. Return complete assessment
+     */
+    console.log(
+      "Assessment processing completed.",
+    );
+
     return NextResponse.json({
       success: true,
 
@@ -155,11 +195,14 @@ export async function POST(
           answerResult.answers,
 
         mappings,
+
+        grading:
+          gradingResult.results,
       },
     });
   } catch (error) {
     console.error(
-      "ASSESSMENT PROCESSING FAILED:",
+      "Assessment processing failed:",
       error,
     );
 
@@ -170,11 +213,9 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : "Failed to process assessment.",
+            : "Assessment processing failed.",
       },
-      {
-        status: 500,
-      },
+      { status: 500 },
     );
   }
 }

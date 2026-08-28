@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
     "@napi-rs/canvas",
     "pdfjs-dist",
   ],
+  reactStrictMode:false,
 };
 
 export default nextConfig;

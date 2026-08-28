@@ -6,7 +6,7 @@ type FetchDocumentPagesInput = {
 };
 
 type FetchDocumentPagesResult = {
-  success: boolean;
+  success?: boolean;
   documentPages?: DocumentPage[];
   error?: string;
 };
@@ -28,6 +28,15 @@ export async function fetchDocumentPages({
   formData.append(
     "documentId",
     documentId,
+  );
+
+  /*
+   * The API validates the MIME type,
+   * so we must send it.
+   */
+  formData.append(
+    "fileType",
+    file.type,
   );
 
   const response =
