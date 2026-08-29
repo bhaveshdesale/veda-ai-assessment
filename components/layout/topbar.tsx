@@ -66,11 +66,11 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
         {/* Avatar */}
         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e1e7dc] text-[7px] font-bold text-[#596650]">
-          MR
+          BD
         </div>
 
         <span className="hidden text-[9px] font-semibold text-[#494841] md:block">
-          Madhur Rastogi
+          Bhavesh Desale
         </span>
 
         <ChevronDown

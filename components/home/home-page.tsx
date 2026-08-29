@@ -31,7 +31,7 @@ export function HomePage() {
         </p>
 
         <h1 className="mt-2 text-[28px] font-bold tracking-[-0.05em] text-[#34342f]">
-          Good morning, Madhur
+          Good morning, Bhavesh
         </h1>
 
         <p className="mt-2 text-[11px] text-[#85837a]">
